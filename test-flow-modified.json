@@ -1,0 +1,162 @@
+[
+  {
+    "id": "253add6a74e2ea05",
+    "type": "tab",
+    "label": "Lena's Flow"
+  },
+  {
+    "id": "6b04dfecb57a21d0",
+    "type": "mysql",
+    "z": "253add6a74e2ea05",
+    "g": "bb3696d0b03bbf55",
+    "mydb": "4fa50d3aac3749b2",
+    "name": "",
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "31ed732821784aba",
+    "type": "mysql",
+    "z": "253add6a74e2ea05",
+    "mydb": "4fa50d3aac3749b2",
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "2b058eb526b7a541",
+    "type": "mysql",
+    "z": "253add6a74e2ea05",
+    "mydb": "4fa50d3aac3749b2",
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "5a7d12b0f037dd7e",
+    "type": "mysql",
+    "z": "253add6a74e2ea05",
+    "mydb": "4fa50d3aac3749b2",
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "9e59966fe0caf4a7",
+    "type": "mysql",
+    "z": "253add6a74e2ea05",
+    "mydb": "4fa50d3aac3749b2",
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "ac5d275a87463b39",
+    "type": "mysql",
+    "z": "253add6a74e2ea05",
+    "mydb": "4fa50d3aac3749b2",
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "d1383879b85a568b",
+    "type": "group",
+    "z": "253add6a74e2ea05",
+    "nodes": [
+      "e54c7cf26e86e0f8",
+      "d6ef565c7de9c85f",
+      "6cc8ca413285a51d",
+      "pm_switch_rw_001",
+      "pm_mysql_read_001"
+    ]
+  },
+  {
+    "id": "e54c7cf26e86e0f8",
+    "type": "function",
+    "z": "253add6a74e2ea05",
+    "g": "d1383879b85a568b",
+    "wires": [
+      [
+        "pm_switch_rw_001"
+      ]
+    ]
+  },
+  {
+    "id": "d6ef565c7de9c85f",
+    "type": "mysql",
+    "z": "253add6a74e2ea05",
+    "g": "d1383879b85a568b",
+    "mydb": "fd63a9e7fe57deda",
+    "wires": [
+      [
+        "6cc8ca413285a51d"
+      ]
+    ]
+  },
+  {
+    "id": "6cc8ca413285a51d",
+    "type": "function",
+    "z": "253add6a74e2ea05",
+    "g": "d1383879b85a568b",
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "pm_switch_rw_001",
+    "type": "switch",
+    "z": "253add6a74e2ea05",
+    "g": "d1383879b85a568b",
+    "name": "Read vs Write DB",
+    "property": "_op",
+    "propertyType": "msg",
+    "rules": [
+      {
+        "t": "eq",
+        "v": "get",
+        "vt": "str"
+      },
+      {
+        "t": "eq",
+        "v": "run_select",
+        "vt": "str"
+      },
+      {
+        "t": "else"
+      }
+    ],
+    "checkall": true,
+    "repair": false,
+    "outputs": 3,
+    "x": 3620,
+    "y": 700,
+    "wires": [
+      [
+        "pm_mysql_read_001"
+      ],
+      [
+        "pm_mysql_read_001"
+      ],
+      [
+        "d6ef565c7de9c85f"
+      ]
+    ]
+  },
+  {
+    "id": "pm_mysql_read_001",
+    "type": "mysql",
+    "z": "253add6a74e2ea05",
+    "g": "d1383879b85a568b",
+    "mydb": "4fa50d3aac3749b2",
+    "name": "ocpp_CSGO (read)",
+    "x": null,
+    "y": null,
+    "wires": [
+      [
+        "6cc8ca413285a51d"
+      ]
+    ]
+  }
+]

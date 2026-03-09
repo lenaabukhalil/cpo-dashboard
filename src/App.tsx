@@ -1,0 +1,112 @@
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { AuthProvider, useAuth } from './context/AuthContext'
+import { canAccessPath } from './lib/permissions'
+import Layout from './components/Layout'
+import Login from './pages/Login'
+import Dashboard from './pages/Dashboard'
+import Org from './pages/Org'
+import OrgDetails from './pages/OrgDetails'
+import Sessions from './pages/Sessions'
+import Reports from './pages/Reports'
+import PredictiveAI from './pages/PredictiveAI'
+import Support from './pages/Support'
+import Billing from './pages/Billing'
+import Settings from './pages/Settings'
+import MapView from './pages/MapView'
+import PartnerUsers from './pages/PartnerUsers'
+import SupportLayout from './pages/support/SupportLayout'
+import ListOfLocationChargerConnectorTariffs from './pages/ListOfLocationChargerConnectorTariffs'
+import AuditLog from './pages/AuditLog'
+
+function isOperator(roleName: string | undefined): boolean {
+  return (roleName || '').toLowerCase() === 'operator'
+}
+
+function isAccountant(roleName: string | undefined): boolean {
+  return (roleName || '').toLowerCase() === 'accountant'
+}
+
+function isEngineer(roleName: string | undefined): boolean {
+  return (roleName || '').toLowerCase() === 'engineer'
+}
+
+function isManager(roleName: string | undefined): boolean {
+  return (roleName || '').toLowerCase() === 'manager'
+}
+
+/** يوجّه المستخدم حسب صلاحياته: Engineer, Accountant, Manager لا يدخلون لصفحات غير المسموح بها. Operator لا يسمح له بتسجيل الدخول من الـ API. */
+function RoleGuard({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth()
+  const location = useLocation()
+  if (loading || !user) return null
+  const path = location.pathname.replace(/\/$/, '') || '/'
+  if (!canAccessPath(user.role_name, path)) {
+    if (isAccountant(user.role_name)) return <Navigate to="/" replace />
+    if (isEngineer(user.role_name)) return <Navigate to="/" replace />
+    if (isManager(user.role_name)) return <Navigate to="/" replace />
+    if (isOperator(user.role_name)) return <Navigate to="/" replace />
+    return <Navigate to="/details" replace />
+  }
+  return <>{children}</>
+}
+
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth()
+  if (loading) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background text-foreground">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary" aria-hidden />
+        <p className="text-sm text-muted-foreground">Loading...</p>
+      </div>
+    )
+  }
+  if (!user) return <Navigate to="/login" replace />
+  return <>{children}</>
+}
+
+function IndexRedirect() {
+  return <Dashboard />
+}
+
+function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <Layout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<IndexRedirect />} />
+        <Route path="org" element={<RoleGuard><Org /></RoleGuard>} />
+        <Route path="details" element={<RoleGuard><OrgDetails /></RoleGuard>} />
+        <Route path="list" element={<RoleGuard><ListOfLocationChargerConnectorTariffs /></RoleGuard>} />
+        <Route path="sessions" element={<RoleGuard><Sessions /></RoleGuard>} />
+        <Route path="reports" element={<RoleGuard><Reports /></RoleGuard>} />
+        <Route path="predictive-ai" element={<RoleGuard><PredictiveAI /></RoleGuard>} />
+        <Route path="support" element={<RoleGuard><SupportLayout /></RoleGuard>}>
+          <Route index element={<Support />} />
+        </Route>
+        <Route path="billing" element={<RoleGuard><Billing /></RoleGuard>} />
+        <Route path="map" element={<RoleGuard><MapView /></RoleGuard>} />
+        <Route path="partner-users" element={<RoleGuard><PartnerUsers /></RoleGuard>} />
+        <Route path="audit-log" element={<RoleGuard><AuditLog /></RoleGuard>} />
+        <Route path="access-log" element={<Navigate to="/audit-log" replace />} />
+        <Route path="settings" element={<RoleGuard><Settings /></RoleGuard>} />
+        <Route path="profile" element={<Navigate to="/settings" replace />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  )
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppRoutes />
+    </AuthProvider>
+  )
+}

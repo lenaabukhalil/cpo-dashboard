@@ -1,0 +1,2 @@
+Place your ION logo image here as ion-logo.png so the sidebar can display it.
+The app will fall back to the lightning icon if the file is missing.

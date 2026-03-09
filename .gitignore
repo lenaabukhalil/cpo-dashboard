@@ -1,0 +1,58 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+tsconfig.node.tsbuildinfo
+
+# Environment and secrets (never commit)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production
+.env.production.local
+.env.*.local
+!.env.production.example
+
+# Excluded project folders (per request)
+scripts/
+database/
+
+# IDE and OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs and temp
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.cache/
+
+# Private keys and sensitive files
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials*
+*secret*
+
+# Windows artifacts
+nul
+nul.*
+*.stackdump
+
+# Optional: uncomment to ignore test/debug flow files
+# test-flow.json
+# test-flow-modified.json
+
+# Optional: uncomment to ignore untitled/junk files
+# Untitled
