@@ -223,6 +223,11 @@ const messages: Record<string, { en: string; ar: string }> = {
   'common.all': { en: 'All', ar: 'الكل' },
   'common.copy': { en: 'Copy', ar: 'نسخ' },
 
+  // Login errors (match API messages for mapping)
+  'login.errorInvalidEmail': { en: 'Invalid email or user not found', ar: 'البريد الإلكتروني غير صحيح أو المستخدم غير موجود' },
+  'login.errorWrongPassword': { en: 'Wrong password', ar: 'كلمة المرور غير صحيحة' },
+  'login.errorGeneric': { en: 'Login failed', ar: 'فشل تسجيل الدخول' },
+
   // Settings
   'settings.title': { en: 'Settings', ar: 'الإعدادات' },
   'settings.subtitle': { en: 'Profile, password, and preferences', ar: 'الملف الشخصي، كلمة المرور، والتفضيلات' },

@@ -41,7 +41,7 @@ export async function request<T>(
   const res = await fetch(BASE + fullPath, { ...init, headers })
   const json = await res.json().catch(() => ({}))
   if (!res.ok) {
-    if (res.status === 401) {
+    if (res.status === 401 && !fullPath.includes('auth/login')) {
       clearGetCache()
       localStorage.removeItem('cpo_token')
       window.location.href = '/login'

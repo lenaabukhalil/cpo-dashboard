@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useTranslation } from '../context/LanguageContext'
 import { login } from '../services/api'
 import { Card, CardContent, CardHeader } from '../components/ui/card'
 import { Button } from '../components/ui/button'
@@ -9,6 +10,7 @@ import { Label } from '../components/ui/label'
 
 export default function Login() {
   const { user, setUser } = useAuth()
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
@@ -35,8 +37,14 @@ export default function Login() {
       navigate('/')
     } else {
       const err = res as { message?: string; details?: string; error?: string; statusCode?: number }
-      const msg = err.error || err.details || err.message
-      setError(msg || (res.statusCode === 401 ? 'Invalid email or password' : 'Login failed'))
+      const apiMsg = (err.message || err.error || err.details || '').trim().toLowerCase()
+      if (apiMsg.includes('invalid email') || apiMsg.includes('user not found')) {
+        setError(t('login.errorInvalidEmail'))
+      } else if (apiMsg.includes('wrong password') || apiMsg.includes('invalid password')) {
+        setError(t('login.errorWrongPassword'))
+      } else {
+        setError(err.message || err.error || err.details || t('login.errorGeneric'))
+      }
     }
   }
 
