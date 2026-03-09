@@ -127,7 +127,7 @@ export default function NotificationBell() {
     })
   }
 
-  const renderNotificationItem = (n: NotificationItem, inHistory: boolean) => (
+  const renderNotificationItem = (n: NotificationItem, _inHistory: boolean) => (
     <li
       key={n.id}
       role="button"

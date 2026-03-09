@@ -19,7 +19,7 @@ import {
   type Connector,
 } from '../services/api'
 import { useAuth } from '../context/AuthContext'
-import Select, { components, type StylesConfig } from 'react-select'
+import Select, { components, type StylesConfig, type OptionProps, type GroupBase } from 'react-select'
 import { AppSelect } from '../components/shared/AppSelect'
 import { TablePagination } from '../components/TablePagination'
 import { useTranslation } from '../context/LanguageContext'
@@ -86,13 +86,10 @@ export default function Reports() {
   const [tab, setTab] = useState<TabId>('sessions')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
-  const [locationId, setLocationId] = useState('')
-  const [chargerId, setChargerId] = useState('')
+  const [locationId, _setLocationId] = useState('')
   const [locations, setLocations] = useState<Location[]>([])
-  const [chargers, setChargers] = useState<Charger[]>([])
+  const [, setChargers] = useState<Charger[]>([])
   const [sessionsData, setSessionsData] = useState<SessionsReportRow[]>([])
-  const [chargersData, setChargersData] = useState<ChargerComparisonRow[]>([])
-  const [connectorsData, setConnectorsData] = useState<ConnectorComparisonRow[]>([])
   const [loading, setLoading] = useState(false)
 
   // Sessions paging
@@ -324,40 +321,6 @@ export default function Reports() {
       .finally(() => setLoading(false))
   }
 
-  const loadChargers = () => {
-    const start = from || '2025-01-01'
-    const end = to || '2026-12-31'
-    setLoading(true)
-    getChargerComparison({
-      start,
-      end,
-      locationId: locationId || undefined,
-      chargerIds: chargerId ? chargerId : undefined,
-    })
-      .then((r) => {
-        const d = (r as { data?: ChargerComparisonRow[] }).data ?? (r as unknown as { data?: ChargerComparisonRow[] }).data
-        setChargersData(Array.isArray(d) ? d : [])
-      })
-      .finally(() => setLoading(false))
-  }
-
-  const loadConnectors = () => {
-    const start = from || '2025-01-01'
-    const end = to || '2026-12-31'
-    setLoading(true)
-    getConnectorComparison({
-      start,
-      end,
-      locationId: locationId || undefined,
-      chargerId: chargerId || undefined,
-    })
-      .then((r) => {
-        const d = (r as { data?: ConnectorComparisonRow[] }).data ?? (r as unknown as { data?: ConnectorComparisonRow[] }).data
-        setConnectorsData(Array.isArray(d) ? d : [])
-      })
-      .finally(() => setLoading(false))
-  }
-
   const runCompareChargerAB = () => {
     if (!chargerAId || !chargerBId) return
     const sA = startA || from || '2025-01-01'
@@ -408,14 +371,14 @@ export default function Reports() {
       const raw = r as Record<string, unknown>
       const chargerDisplay = chargerIdToName.get(String(r.Charger ?? '').trim()) ?? (raw.Charger as string | number | undefined)
       return [
-        csvEscape(raw['Start Date/Time']),
-        csvEscape(raw['Session ID']),
-        csvEscape(raw.Location),
+        csvEscape(raw['Start Date/Time'] as string | number | undefined),
+        csvEscape(raw['Session ID'] as string | number | undefined),
+        csvEscape(raw.Location as string | number | undefined),
         csvEscape(chargerDisplay),
-        csvEscape(raw.Connector),
-        csvEscape(raw['Energy (KWH)']),
-        csvEscape(raw['Amount (JOD)'] ?? raw['Amount (JOD) mobile']),
-        csvEscape(raw.mobile),
+        csvEscape(raw.Connector as string | number | undefined),
+        csvEscape(raw['Energy (KWH)'] as string | number | undefined),
+        csvEscape((raw['Amount (JOD)'] ?? raw['Amount (JOD) mobile']) as string | number | undefined),
+        csvEscape(raw.mobile as string | number | undefined),
       ]
     })
     const csv = [headers.join(','), ...rows.map((row) => row.join(','))].join('\r\n')
@@ -424,53 +387,6 @@ export default function Reports() {
     const a = document.createElement('a')
     a.href = url
     a.download = `sessions-${from || 'from'}-${to || 'to'}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  const exportChargersCsv = () => {
-    const headers = ['Charger ID', 'Name', 'Type', 'Status', 'Location', 'Connectors', 'Online', 'Sessions', 'Total kWh', 'Total Amount']
-    const rows = chargersData.map((r) => [
-      csvEscape(r.chargerId),
-      csvEscape(r.name),
-      csvEscape(r.type),
-      csvEscape(r.status),
-      csvEscape(r.locationName),
-      csvEscape(r.connectorsCount),
-      csvEscape(r.onlineFlag != null ? (r.onlineFlag ? 'Yes' : 'No') : ''),
-      csvEscape(r.sessionsCount),
-      csvEscape(r.totalKwh),
-      csvEscape(r.totalAmount),
-    ])
-    const csv = [headers.join(','), ...rows.map((row) => row.join(','))].join('\r\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `charger-comparison-${from || 'from'}-${to || 'to'}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  const exportConnectorsCsv = () => {
-    const headers = ['Connector ID', 'Charger ID', 'Charger Name', 'Type', 'Status', 'Location', 'Sessions', 'Total kWh', 'Total Amount']
-    const rows = connectorsData.map((r) => [
-      csvEscape(r.connectorId),
-      csvEscape(r.chargerId),
-      csvEscape(r.chargerName),
-      csvEscape(r.connectorType),
-      csvEscape(r.status),
-      csvEscape(r.locationName),
-      csvEscape(r.sessionsCount),
-      csvEscape(r.totalKwh),
-      csvEscape(r.totalAmount),
-    ])
-    const csv = [headers.join(','), ...rows.map((row) => row.join(','))].join('\r\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `connector-comparison-${from || 'from'}-${to || 'to'}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -489,12 +405,6 @@ export default function Reports() {
   const scoreConnectorA = useMemo(() => connectorScore(compareConnectorA, daysConnA), [compareConnectorA, daysConnA])
   const scoreConnectorB = useMemo(() => connectorScore(compareConnectorB, daysConnB), [compareConnectorB, daysConnB])
   const bestConnector = scoreConnectorA >= scoreConnectorB ? 'A' : 'B'
-
-  const locOptions = useMemo(() => [{ value: '', label: 'All' }, ...locations.map((l) => ({ value: String(l.location_id), label: l.name }))], [locations])
-  const chargerOptions = useMemo(
-    () => [{ value: '', label: 'All' }, ...chargers.map((c) => ({ value: String(c.id), label: c.name }))],
-    [chargers]
-  )
 
   // Sessions report: multi-select options (from report data)
   type SessionFilterOption = { value: string; label: string }
@@ -556,15 +466,19 @@ export default function Reports() {
   )
 
   // في القائمة المنسدلة: ✓ للمحدد + X لإلغاء التحديد من الفلتر
-  type SelectPropsWithDeselect = { onDeselectOption?: (value: string) => void }
+  type SelectPropsWithDeselect = React.ComponentProps<typeof Select<SessionFilterOption, true, GroupBase<SessionFilterOption>>> & {
+    onDeselectOption?: (value: string) => void
+  }
+  const SelectWithDeselect = Select as React.ComponentType<SelectPropsWithDeselect>
   const SessionFilterOptionWithCheck = useMemo(
     () =>
-      function OptionWithCheck(props: React.ComponentProps<typeof components.Option>) {
+      function OptionWithCheck(props: OptionProps<SessionFilterOption, true, GroupBase<SessionFilterOption>>) {
         const onDeselect = (props.selectProps as SelectPropsWithDeselect).onDeselectOption
+        const data = props.data as SessionFilterOption
         return (
           <components.Option {...props}>
             <div className="flex items-center justify-between gap-2 w-full">
-              <span>{props.data.label}</span>
+              <span>{data.label}</span>
               {props.isSelected && (
                 <span className="flex items-center gap-1 shrink-0">
                   <Check className="h-4 w-4 text-primary" aria-hidden />
@@ -575,7 +489,7 @@ export default function Reports() {
                       aria-label="Remove from filter"
                       onClick={(e) => {
                         e.stopPropagation()
-                        onDeselect(props.data.value)
+                        onDeselect(data.value)
                       }}
                     >
                       <X className="h-3.5 w-3.5" />
@@ -679,7 +593,7 @@ export default function Reports() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="space-y-2">
                       <Label className="text-xs text-muted-foreground">Location</Label>
-                      <Select<SessionFilterOption, true>
+                      <SelectWithDeselect
                         isMulti
                         options={sessionLocationOptions}
                         value={sessionLocationOptions.filter((o) => selectedLocationNames.includes(o.value))}
@@ -693,7 +607,7 @@ export default function Reports() {
                         hideSelectedOptions={false}
                         styles={multiSelectStyles}
                         components={{ Option: SessionFilterOptionWithCheck }}
-                        onDeselectOption={(val) => {
+                        onDeselectOption={(val: string) => {
                           setSelectedLocationNames((prev) => prev.filter((v) => v !== val))
                           setPageSession(1)
                         }}
@@ -704,7 +618,7 @@ export default function Reports() {
                     </div>
                     <div className="space-y-2">
                       <Label className="text-xs text-muted-foreground">Charger</Label>
-                      <Select<SessionFilterOption, true>
+                      <SelectWithDeselect
                         isMulti
                         options={sessionChargerOptions}
                         value={sessionChargerOptions.filter((o) => selectedChargerNames.includes(o.value))}
@@ -718,7 +632,7 @@ export default function Reports() {
                         hideSelectedOptions={false}
                         styles={multiSelectStyles}
                         components={{ Option: SessionFilterOptionWithCheck }}
-                        onDeselectOption={(val) => {
+                        onDeselectOption={(val: string) => {
                           setSelectedChargerNames((prev) => prev.filter((v) => v !== val))
                           setPageSession(1)
                         }}
@@ -729,7 +643,7 @@ export default function Reports() {
                     </div>
                     <div className="space-y-2">
                       <Label className="text-xs text-muted-foreground">Connector</Label>
-                      <Select<SessionFilterOption, true>
+                      <SelectWithDeselect
                         isMulti
                         options={sessionConnectorOptions}
                         value={sessionConnectorOptions.filter((o) => selectedConnectorNames.includes(o.value))}
@@ -743,7 +657,7 @@ export default function Reports() {
                         hideSelectedOptions={false}
                         styles={multiSelectStyles}
                         components={{ Option: SessionFilterOptionWithCheck }}
-                        onDeselectOption={(val) => {
+                        onDeselectOption={(val: string) => {
                           setSelectedConnectorNames((prev) => prev.filter((v) => v !== val))
                           setPageSession(1)
                         }}

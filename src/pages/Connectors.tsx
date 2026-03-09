@@ -275,13 +275,6 @@ export default function Connectors() {
     setTimeout(() => setMessage(''), 3000)
   }
 
-  const openEditFromStatus = (row: ConnectorRow) => {
-    setActiveTab('connectors')
-    const locId = locations.find((l) => l.name === row.locationName)?.location_id ?? formLocationId
-    setFormLocationId(locId)
-    setDeferredEdit({ chargerId: row.chargerId, connectorId: row.connector.id })
-  }
-
   if (orgId == null) {
     return (
       <div className="space-y-6">

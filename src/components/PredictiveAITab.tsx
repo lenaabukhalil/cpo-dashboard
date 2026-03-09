@@ -68,7 +68,7 @@ function getValue(w: WeeklyPoint, type: PredictionType): number {
 
 /** Short label per week: "2 Dec", "9 Jan" so no repeated month-only labels */
 function weekLabel(weekStart: string): string {
-  const [y, m, d] = weekStart.split('-').map(Number)
+  const [, m, d] = weekStart.split('-').map(Number)
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
   return `${d} ${months[(m ?? 1) - 1]}`
 }

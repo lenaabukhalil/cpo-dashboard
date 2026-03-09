@@ -174,9 +174,10 @@ export default function AuditLog() {
     getAccessLogs(filters)
       .then((res) => {
         if (!res.success) { setAccEntries([]); setAccTotal(0); return }
-        const list = Array.isArray(res.data) ? res.data : []
+        const r = res as { data?: AccessLogEntry[]; total?: number }
+        const list = Array.isArray(r.data) ? r.data : []
         setAccEntries(list)
-        setAccTotal(typeof res.total === 'number' ? res.total : list.length)
+        setAccTotal(typeof r.total === 'number' ? r.total : list.length)
       })
       .catch(() => { setAccEntries([]); setAccTotal(0) })
       .finally(() => setAccLoading(false))
@@ -193,7 +194,12 @@ export default function AuditLog() {
   const handleExportAudit = async (format: 'csv' | 'pdf') => {
     setExportError(null); setExportHint(null); setExporting(format)
     try {
-      const exportFilters: Omit<AuditLogFilters, 'limit' | 'offset'> = { from, to, action: action || undefined, entity_type: entityType || undefined }
+      const exportFilters: Omit<AuditLogFilters, 'limit' | 'offset'> = {
+        from,
+        to,
+        action: action ? (action as 'create' | 'update' | 'delete') : undefined,
+        entity_type: entityType || undefined,
+      }
       if (user?.organization_id != null && !canAccessAuditLogFull(user?.role_name)) exportFilters.organization_id = user.organization_id
       const { blob, filename } = await exportAuditLogs(format, exportFilters)
       const url = URL.createObjectURL(blob)

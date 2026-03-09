@@ -39,7 +39,7 @@ const inputSelectClass =
 
 /** Format charger time as MM/DD/YYYY, HH:MM:SS AM/PM. Tries common API field names. */
 function formatChargerTime(c: ChargerType): string {
-  const rec = c as Record<string, unknown>
+  const rec = c as unknown as Record<string, unknown>
   const raw =
     rec.last_updated ?? rec.updated_at ?? rec.last_seen ?? rec.last_heartbeat ??
     rec.timestamp ?? rec.created_at ?? rec.time
@@ -70,7 +70,7 @@ export default function Chargers() {
   const [submitting, setSubmitting] = useState(false)
 
   // Form state: cascading Organization → Location → Charger
-  const [selectedOrgId, setSelectedOrgId] = useState<number | ''>(orgId ?? '')
+  const [_selectedOrgId, setSelectedOrgId] = useState<number | ''>(orgId ?? '')
   const [selectedLocationId, setSelectedLocationId] = useState<number | ''>('')
   const [selectedChargerId, setSelectedChargerId] = useState<number | '' | 'new'>('new')
   const [chargersInLocation, setChargersInLocation] = useState<ChargerType[]>([])

@@ -12,7 +12,6 @@ import {
   FileText,
   Wrench,
   Settings,
-  Wallet,
   Users,
   Map,
   Table,
@@ -190,4 +189,9 @@ export function canAccessAuditLog(roleName: string | undefined): boolean {
 export function canAccessAuditLogFull(roleName: string | undefined): boolean {
   const role = normalizeRole(roleName)
   return role === 'admin'
+}
+
+/** ION app end-users management (customer support); admin only for now. */
+export function canManageIONUsers(roleName: string | undefined): boolean {
+  return normalizeRole(roleName) === 'admin'
 }

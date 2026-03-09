@@ -31,7 +31,6 @@ export default function Login() {
     const userObj = (res as { user?: unknown }).user ?? (res as { data?: { user?: unknown } }).data?.user
     if (res.success && token) {
       localStorage.setItem('cpo_token', token)
-      const u = userObj as { role_name?: string } | undefined
       if (userObj) setUser(userObj as Parameters<typeof setUser>[0])
       navigate('/')
     } else {

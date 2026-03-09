@@ -4,7 +4,7 @@ import { BarChart3, User, DollarSign } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 
 export default function MonitorRevenue() {
-  const { user } = useAuth()
+  const { user: _user } = useAuth()
   const [loading, setLoading] = useState(true)
   const [placeholder, setPlaceholder] = useState<{ operator: string; revenue: number }[]>([])
 

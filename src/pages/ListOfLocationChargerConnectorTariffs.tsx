@@ -83,7 +83,8 @@ function StatusPill({ value }: { value: string }) {
 }
 
 function formatChargerTime(c: Charger): string {
-  const raw = c.last_updated ?? (c as Record<string, unknown>).updated_at ?? (c as Record<string, unknown>).last_seen ?? (c as Record<string, unknown>).last_heartbeat ?? (c as Record<string, unknown>).created_at
+  const rec = c as unknown as Record<string, unknown>
+  const raw = c.last_updated ?? rec.updated_at ?? rec.last_seen ?? rec.last_heartbeat ?? rec.created_at
   if (raw == null || raw === '') return '—'
   const d = new Date(typeof raw === 'string' ? raw : Number(raw) * (Number(raw) > 1e12 ? 1 : 1000))
   if (Number.isNaN(d.getTime())) return '—'
@@ -255,8 +256,6 @@ export default function ListOfLocationChargerConnectorTariffs() {
     )
   }, [chargerRows, chargerOnlineSearch])
 
-  const totalChargerOfflinePages = Math.max(1, Math.ceil(chargerOfflineList.length / perPageChargerOffline))
-  const totalChargerOnlinePages = Math.max(1, Math.ceil(chargerOnlineList.length / perPageChargerOnline))
   const paginatedChargerOffline = useMemo(
     () => chargerOfflineList.slice((pageChargerOffline - 1) * perPageChargerOffline, pageChargerOffline * perPageChargerOffline),
     [chargerOfflineList, pageChargerOffline, perPageChargerOffline]
@@ -298,10 +297,6 @@ export default function ListOfLocationChargerConnectorTariffs() {
   const paginatedLocations = useMemo(
     () => filteredLocations.slice((page - 1) * perPage, page * perPage),
     [filteredLocations, page, perPage]
-  )
-  const paginatedChargers = useMemo(
-    () => filteredChargers.slice((page - 1) * perPage, page * perPage),
-    [filteredChargers, page, perPage]
   )
   const paginatedConnectors = useMemo(
     () => filteredConnectors.slice((page - 1) * perPage, page * perPage),

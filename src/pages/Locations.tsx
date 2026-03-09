@@ -117,37 +117,6 @@ export default function Locations() {
     if (orgId != null) setForm((f) => ({ ...f, organization_id: orgId }))
   }, [orgId])
 
-  const openEdit = (loc: LocationType) => {
-    setActiveTab('manage')
-    setSelectedLocationId(loc.location_id)
-    setForm({
-      organization_id: loc.organization_id,
-      name: loc.name ?? '',
-      name_ar: loc.name_ar ?? '',
-      lat: loc.lat ?? '',
-      lng: loc.lng ?? '',
-      num_chargers: loc.num_chargers ?? undefined,
-      description: loc.description ?? '',
-      logo_url: loc.logo_url ?? '',
-      ad_url: loc.ad_url ?? '',
-      payment_types: loc.payment_types ?? '',
-      availability: loc.availability ?? '',
-      subscription: (loc.subscription as string) ?? 'free',
-      visible_on_map: !!loc.visible_on_map,
-      ocpi_id: loc.ocpi_id ?? '',
-      ocpi_name: loc.ocpi_name ?? '',
-      ocpi_address: loc.ocpi_address ?? '',
-      ocpi_city: loc.ocpi_city ?? '',
-      ocpi_postal_code: loc.ocpi_postal_code ?? '',
-      ocpi_country: loc.ocpi_country ?? '',
-      ocpi_visible: !!loc.ocpi_visible,
-      ocpi_facility: loc.ocpi_facility ?? '',
-      ocpi_parking_restrictions: loc.ocpi_parking_restrictions ?? '',
-      ocpi_directions: loc.ocpi_directions ?? '',
-      ocpi_directions_en: loc.ocpi_directions_en ?? '',
-    })
-  }
-
   useEffect(() => {
     if (selectedLocationId === 'new') {
       setForm((f) => ({ ...emptyLocationForm(orgId ?? 0), organization_id: f.organization_id }))

@@ -38,7 +38,7 @@ export default function Sidebar({ mobile, onOpenChange, side = 'left' }: Sidebar
       .then((r) => {
         const o = (r as { data?: Org }).data ?? (r as unknown as Org)
         if (o && typeof o === 'object' && 'organization_id' in o) {
-          const raw = o as Record<string, unknown>
+          const raw = o as unknown as Record<string, unknown>
           const logo = (o.logo ?? raw.logo ?? raw.LOGO ?? '') as string | undefined
           setOrg({ ...o, logo: logo && String(logo).trim() ? String(logo).trim() : undefined } as Org)
         }
@@ -61,7 +61,7 @@ export default function Sidebar({ mobile, onOpenChange, side = 'left' }: Sidebar
           getOrg(user.organization_id).then((r) => {
             const o = (r as { data?: Org }).data ?? (r as unknown as Org)
             if (o && typeof o === 'object' && 'organization_id' in o) {
-              const raw = o as Record<string, unknown>
+              const raw = o as unknown as Record<string, unknown>
               const logo = (o.logo ?? raw.logo ?? raw.LOGO ?? '') as string | undefined
               setOrg({ ...o, logo: logo && String(logo).trim() ? String(logo).trim() : undefined } as Org)
             }

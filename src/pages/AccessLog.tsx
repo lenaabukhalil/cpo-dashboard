@@ -96,8 +96,9 @@ export default function AccessLog() {
           setTotal(0)
           return
         }
-        const list = Array.isArray(res.data) ? res.data : []
-        const totalCount = typeof res.total === 'number' ? res.total : list.length
+        const r = res as { data?: AccessLogEntry[]; total?: number }
+        const list = Array.isArray(r.data) ? r.data : []
+        const totalCount = typeof r.total === 'number' ? r.total : list.length
         setEntries(list)
         setTotal(totalCount)
       })
@@ -184,7 +185,7 @@ export default function AccessLog() {
               <label className="text-xs text-muted-foreground">{t('audit.action')}</label>
               <AppSelect
                 value={action}
-                onValueChange={setAction}
+                onChange={setAction}
                 options={ACTION_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) }))}
                 placeholder={t('common.all')}
               />

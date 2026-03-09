@@ -656,6 +656,10 @@ export interface ConnectorStatusRow {
   chargerId?: number
   chargerName?: string
   chargerStatus?: string
+  /** Snake_case variant from some APIs */
+  charger_status?: string
+  charger_name?: string
+  location_name?: string
   locationName?: string
   organizationName?: string
 }
