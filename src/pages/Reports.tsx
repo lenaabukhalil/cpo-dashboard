@@ -506,11 +506,11 @@ export default function Reports() {
             <div className="flex flex-wrap items-end gap-4 mb-4 pb-4 border-b border-border">
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">{t('reports.from')}</Label>
-                <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-40" />
+                <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-full min-w-[140px] sm:w-40" />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">{t('reports.to')}</Label>
-                <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-40" />
+                <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-full min-w-[140px] sm:w-40" />
               </div>
               <div className="space-y-1.5 min-w-[180px]">
                 <Label className="text-xs text-muted-foreground">{t('list.location')}</Label>

@@ -149,11 +149,11 @@ export default function LogsTab() {
           <div className="flex flex-wrap items-end gap-3 ms-auto">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">{t('reports.from')}</Label>
-              <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-40" />
+              <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-full min-w-[140px] sm:w-40" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">{t('reports.to')}</Label>
-              <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-40" />
+              <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-full min-w-[140px] sm:w-40" />
             </div>
             <Button type="button" onClick={loadLogs} disabled={loading || !from || !to} className="gap-2">
               <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />

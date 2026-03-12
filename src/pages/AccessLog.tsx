@@ -158,7 +158,7 @@ export default function AccessLog() {
               <label className="text-xs text-muted-foreground">{t('audit.from')}</label>
               <input
                 type="date"
-                className="h-9 min-h-[44px] rounded-md border border-input bg-background px-3 text-sm sm:text-base md:text-sm date-input-mobile"
+                className="min-h-[44px] w-full sm:min-w-[140px] rounded-md border border-input bg-background px-3 text-base md:text-sm date-input-mobile"
                 value={from}
                 onChange={(e) => setFrom(e.target.value)}
               />
@@ -167,7 +167,7 @@ export default function AccessLog() {
               <label className="text-xs text-muted-foreground">{t('audit.to')}</label>
               <input
                 type="date"
-                className="h-9 min-h-[44px] rounded-md border border-input bg-background px-3 text-sm sm:text-base md:text-sm date-input-mobile"
+                className="min-h-[44px] w-full sm:min-w-[140px] rounded-md border border-input bg-background px-3 text-base md:text-sm date-input-mobile"
                 value={to}
                 onChange={(e) => setTo(e.target.value)}
               />

@@ -104,6 +104,7 @@
     -webkit-text-size-adjust: 100%;
     width: 100%;
     min-width: 0;
+    touch-action: manipulation;
   }
 
   /* Header: same background as page to avoid white bar at top */
@@ -170,26 +171,49 @@
     margin: 8px;
   }
 
-  /* Tables: horizontal scroll on small screens */
+  /* Tables: horizontal scroll on small screens, touch-friendly */
   .table-wrap {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    border-radius: var(--radius);
+    margin-bottom: 0.5rem;
   }
 
-  /* Mobile: prevent zoom on input focus (iOS), ensure date inputs are visible */
+  /* Mobile: 16px on all form controls to prevent iOS Safari zoom on focus */
   @media (max-width: 768px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
     input[type="date"],
     input[type="datetime-local"],
     input[type="time"],
+    input[type="month"],
     .date-input-mobile {
       font-size: 16px !important;
       min-height: 44px;
       color: hsl(var(--foreground));
+      box-sizing: border-box;
     }
     input[type="date"]::placeholder,
     input[type="datetime-local"]::placeholder {
       color: hsl(var(--muted-foreground));
       opacity: 1;
+    }
+    /* Align height of inputs/selects/buttons in filter rows */
+    .date-input-mobile,
+    input[type="date"],
+    input[type="datetime-local"],
+    input[type="time"] {
+      min-height: 44px;
+      height: 44px;
+    }
+    input[type="number"],
+    input[type="text"],
+    input[type="email"],
+    input[type="password"] {
+      min-height: 44px;
     }
   }
 }

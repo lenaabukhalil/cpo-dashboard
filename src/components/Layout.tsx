@@ -20,8 +20,8 @@ export default function Layout() {
         className={`${contentMargin} relative z-0 flex flex-col min-h-screen h-screen min-w-0 w-full lg:w-[calc(100vw-16rem)] max-w-full bg-background`}
       >
         <Header onMenuClick={() => setSidebarOpen(true)} />
-        <main className="flex-1 flex flex-col min-h-0 p-4 sm:p-6 lg:p-8 overflow-auto overflow-x-hidden text-start bg-background">
-          <div className="max-w-[1400px] mx-auto w-full min-w-0 flex-1 flex flex-col min-h-0 space-y-6">
+        <main className="flex-1 flex flex-col min-h-0 p-4 sm:p-6 lg:p-8 overflow-auto overflow-x-hidden text-start bg-background min-w-0">
+          <div className="max-w-[1400px] mx-auto w-full min-w-0 flex-1 flex flex-col min-h-0 space-y-6 overflow-x-hidden">
             <Outlet />
           </div>
         </main>

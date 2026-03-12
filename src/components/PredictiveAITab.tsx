@@ -237,9 +237,9 @@ export default function PredictiveAITab() {
               </label>
               {rangeMode === 'dates' && (
                 <>
-                  <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-9 w-36" />
+                  <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="min-h-[44px] w-full sm:w-36" />
                   <span className="text-muted-foreground">–</span>
-                  <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-9 w-36" />
+                  <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="min-h-[44px] w-full sm:w-36" />
                 </>
               )}
             </div>
