@@ -246,8 +246,8 @@ export default function Support() {
               className="py-12"
             />
           ) : (
-            <div className="rounded-xl border border-border overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="rounded-xl border border-border overflow-hidden table-wrap">
+              <table className="w-full text-sm min-w-[720px]">
                 <thead>
                   <tr className="bg-muted/40">
                     <th className="text-left py-3 px-4 font-semibold rtl:text-right">{t('support.titleLabel')}</th>
@@ -431,8 +431,8 @@ export default function Support() {
         document.body
       )}
 
-      {editOpen && editingTicket && (
-        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 min-h-[100dvh] min-h-[100vh] z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-[1px]" role="dialog" aria-modal="true" aria-labelledby="edit-ticket-title">
+      {editOpen && editingTicket && createPortal(
+        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 min-h-[100dvh] min-h-[100vh] z-[9999] flex items-center justify-center bg-black/50 p-4 backdrop-blur-[1px]" role="dialog" aria-modal="true" aria-labelledby="edit-ticket-title">
           <div className="w-full max-w-2xl rounded-2xl border border-border bg-card shadow-lg relative max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex items-start justify-between gap-4 p-6 pb-0 flex-shrink-0 border-b border-border">
               <div>
@@ -541,7 +541,8 @@ export default function Support() {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {deleteConfirmId && (

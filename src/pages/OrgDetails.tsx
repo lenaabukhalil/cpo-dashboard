@@ -5,6 +5,7 @@ import {
   getLocations,
   getChargers,
   getConnectors,
+  getConnectorsStatus,
   getTariffs,
   getOrg,
   type Location as LocationType,
@@ -31,19 +32,22 @@ interface LocationWithChargers extends LocationType {
   chargers: ChargerWithConnectors[]
 }
 
-/** Gradient badges for available (green) and offline (red) */
+/** Gradient badges: available (green), preparing (amber), busy (blue), error/unavailable (red) */
 function StatusBadge({ status, className }: { status: string; className?: string }) {
   const v = (status ?? '').toLowerCase()
   const isOnline = ['online', 'available', 'free'].includes(v)
-  const isOffline = ['offline', 'unavailable', 'faulted'].includes(v)
+  const isOffline = ['offline', 'unavailable', 'faulted', 'error'].includes(v)
   const isBusy = ['busy', 'charging'].includes(v)
+  const isPreparing = ['preparing', 'booked', 'suspended', 'reserved', 'finishing'].includes(v)
   const gradientStyle = isOnline
     ? 'bg-gradient-to-r from-emerald-500 to-green-600 text-white border-0 shadow-sm'
     : isOffline
       ? 'bg-gradient-to-r from-rose-500 to-red-600 text-white border-0 shadow-sm'
-      : isBusy
-        ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white border-0 shadow-sm'
-        : 'bg-muted text-muted-foreground border border-border'
+      : isPreparing
+        ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white border-0 shadow-sm'
+        : isBusy
+          ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white border-0 shadow-sm'
+          : 'bg-muted text-muted-foreground border border-border'
   return (
     <Badge variant="outline" className={cn('font-medium transition-transform hover:scale-105', gradientStyle, className)}>
       {status || '—'}
@@ -93,7 +97,7 @@ export default function OrgDetails() {
             const chargers = Array.isArray(chList) ? chList : []
             return Promise.all(
               chargers.map((ch: Charger) =>
-                getConnectors(ch.id).then((connRes) => {
+                getConnectors(ch.id, undefined, { skipCache: true }).then((connRes) => {
                   const connList = (connRes as { data?: Connector[] }).data ?? []
                   return { ...ch, connectors: Array.isArray(connList) ? connList : [] }
                 })
@@ -108,8 +112,34 @@ export default function OrgDetails() {
     })
 
     Promise.all([loadOrg, loadLocations])
-      .then(([, locWithChargers]) => {
-        setLocations(locWithChargers ?? [])
+      .then(async ([, locWithChargers]) => {
+        const tree = locWithChargers ?? []
+        try {
+          const statusRes = await getConnectorsStatus({ skipCache: true })
+          const statusList = (statusRes as { data?: { chargerId?: number; connectorId?: number; status?: string }[] }).data ?? []
+          const statusMap = new Map<string, string>()
+          statusList.forEach((s) => {
+            const cid = s.chargerId ?? (s as Record<string, unknown>).charger_id
+            const connId = s.connectorId ?? (s as Record<string, unknown>).connector_id
+            if (cid != null && connId != null) statusMap.set(`${cid}-${connId}`, (s.status ?? '').trim())
+          })
+          const merged = tree.map((loc) => ({
+            ...loc,
+            chargers: loc.chargers.map((ch) => ({
+              ...ch,
+              connectors: ch.connectors.map((conn) => {
+                const liveStatus = statusMap.get(`${ch.id}-${conn.id}`)
+                if (liveStatus !== undefined && liveStatus !== '') {
+                  return { ...conn, status: liveStatus }
+                }
+                return conn
+              }),
+            })),
+          }))
+          setLocations(merged)
+        } catch {
+          setLocations(tree)
+        }
       })
       .catch(() => setError(t('details.loadFailed')))
       .finally(() => setLoading(false))
@@ -398,11 +428,11 @@ export default function OrgDetails() {
               {tariffsLoading ? (
                 <div className="py-8 flex justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary" /></div>
               ) : (
-                <div className="rounded-xl border border-border overflow-hidden shadow-sm">
+                <div className="rounded-xl border border-border overflow-hidden shadow-sm table-wrap">
                   {tariffs.length === 0 ? (
                     <div className="py-8 text-center text-sm text-muted-foreground">{t('details.noTariffsForConnector')}</div>
                   ) : (
-                    <table className="w-full text-sm border-collapse">
+                    <table className="w-full text-sm border-collapse min-w-[400px]">
                       <thead>
                         <tr className="bg-muted/40">
                           <th className="text-left py-3 px-4 font-semibold rtl:text-right">{t('details.tariffType')}</th>

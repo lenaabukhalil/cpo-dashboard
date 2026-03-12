@@ -272,8 +272,8 @@ export default function Chargers() {
                   onChange={(e) => setStatusOnlineSearch(e.target.value)}
                 />
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+              <div className="overflow-x-auto table-wrap">
+                <table className="w-full text-sm min-w-[560px]">
                   <thead>
                     <tr className="border-b border-border text-muted-foreground text-left">
                       <th className="pb-2 pr-2 font-medium">Name</th>
@@ -314,8 +314,8 @@ export default function Chargers() {
                   onChange={(e) => setStatusOfflineSearch(e.target.value)}
                 />
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+              <div className="overflow-x-auto table-wrap">
+                <table className="w-full text-sm min-w-[560px]">
                   <thead>
                     <tr className="border-b border-border text-muted-foreground text-left">
                       <th className="pb-2 pr-2 font-medium">Name</th>

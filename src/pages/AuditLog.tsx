@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
-import { Download, Filter, RefreshCw, Eye } from 'lucide-react'
+import { Download, Filter, RefreshCw } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from '../context/LanguageContext'
 import { canAccessAuditLog, canAccessAuditLogFull } from '../lib/permissions'
@@ -17,10 +17,10 @@ import {
   type AccessLogEntry,
   type AccessLogFilters,
 } from '../services/api'
+import { getAuditLogSummary, getAccessLogSummary } from '../lib/auditLogSummary'
 import { TablePagination } from '../components/TablePagination'
 import { AppSelect } from '../components/shared/AppSelect'
 import { PageTabs } from '../components/PageTabs'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog'
 import { cn } from '../lib/utils'
 
 const PAGE_SIZES = [10, 25, 50, 100, 200]
@@ -58,25 +58,6 @@ function formatTs(ts: string): string {
   return Number.isNaN(d.getTime()) ? ts : d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' })
 }
 
-function jsonPreview(obj: Record<string, unknown> | null, maxLen = 120): string {
-  if (obj == null) return '—'
-  try {
-    const s = JSON.stringify(obj)
-    return s.length <= maxLen ? s : s.slice(0, maxLen) + '…'
-  } catch {
-    return '—'
-  }
-}
-
-function jsonFull(obj: Record<string, unknown> | null): string {
-  if (obj == null) return '—'
-  try {
-    return JSON.stringify(obj, null, 2)
-  } catch {
-    return String(obj)
-  }
-}
-
 function actionLabelAccess(action: string, t: (k: string) => string): string {
   const map: Record<string, string> = {
     login: 'accessLog.actionLogin',
@@ -99,8 +80,6 @@ export default function AuditLog() {
   const defaultTo = ''
 
   const [activeTab, setActiveTab] = useState<TabId>('audit')
-  const [viewValueRow, setViewValueRow] = useState<{ old_value: Record<string, unknown> | null; new_value: Record<string, unknown> | null } | null>(null)
-
   // Audit tab state
   const [from, setFrom] = useState(defaultFrom)
   const [to, setTo] = useState(defaultTo)
@@ -309,8 +288,8 @@ export default function AuditLog() {
                 </p>
               ) : (
                 <>
-                  <div className="overflow-x-auto -mx-2">
-                    <table className="w-full border-collapse text-sm">
+                  <div className="overflow-x-auto -mx-2 table-wrap">
+                    <table className="w-full border-collapse text-sm min-w-[600px]">
                       <thead>
                         <tr className="border-b border-border">
                           <th className="text-left p-3 font-medium">{t('audit.timestamp')}</th>
@@ -318,7 +297,7 @@ export default function AuditLog() {
                           <th className="text-left p-3 font-medium">{t('audit.action')}</th>
                           <th className="text-left p-3 font-medium">{t('audit.entityType')}</th>
                           <th className="text-left p-3 font-medium" title={t('audit.entityIdTooltipAudit')}>{t('audit.entityId')}</th>
-                          <th className="text-left p-3 font-medium">{t('audit.newValue')}</th>
+                          <th className="text-left p-3 font-medium">{t('audit.details')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -334,8 +313,7 @@ export default function AuditLog() {
                             <td className="p-3">{row.entity_type}</td>
                             <td className="p-3 font-mono text-xs" title={t('audit.entityIdTooltipAudit')}>{row.entity_id ?? '—'}</td>
                             <td className="p-3 text-muted-foreground">
-                              <span className="max-w-[200px] truncate inline-block align-middle" title={jsonFull(row.new_value)}>{jsonPreview(row.new_value)}</span>
-                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 ml-1 inline-flex align-middle" title={t('audit.viewFullValue')} onClick={() => setViewValueRow({ old_value: row.old_value, new_value: row.new_value })}><Eye className="h-3.5 w-3.5" /></Button>
+                              <span className="max-w-[200px] truncate inline-block align-middle">{getAuditLogSummary(row, t)}</span>
                             </td>
                           </tr>
                         ))}
@@ -390,8 +368,8 @@ export default function AuditLog() {
                 <p className="py-8 text-center text-muted-foreground">{t('accessLog.noResults')}</p>
               ) : (
                 <>
-                  <div className="overflow-x-auto -mx-2">
-                    <table className="w-full border-collapse text-sm">
+                  <div className="overflow-x-auto -mx-2 table-wrap">
+                    <table className="w-full border-collapse text-sm min-w-[600px]">
                       <thead>
                         <tr className="border-b border-border">
                           <th className="text-left p-3 font-medium">{t('audit.timestamp')}</th>
@@ -399,7 +377,7 @@ export default function AuditLog() {
                           <th className="text-left p-3 font-medium">{t('audit.action')}</th>
                           <th className="text-left p-3 font-medium">{t('audit.entityType')}</th>
                           <th className="text-left p-3 font-medium" title={t('audit.entityIdTooltipAccess')}>{t('audit.entityId')}</th>
-                          <th className="text-left p-3 font-medium">{t('audit.newValue')}</th>
+                          <th className="text-left p-3 font-medium">{t('audit.details')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -415,8 +393,7 @@ export default function AuditLog() {
                             <td className="p-3">{row.entity_type}</td>
                             <td className="p-3 font-mono text-xs" title={t('audit.entityIdTooltipAccess')}>{row.entity_id ?? '—'}</td>
                             <td className="p-3 text-muted-foreground">
-                              <span className="max-w-[200px] truncate inline-block align-middle" title={jsonFull(row.new_value)}>{jsonPreview(row.new_value)}</span>
-                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 ml-1 inline-flex align-middle" title={t('audit.viewFullValue')} onClick={() => setViewValueRow({ old_value: row.old_value, new_value: row.new_value })}><Eye className="h-3.5 w-3.5" /></Button>
+                              <span className="max-w-[200px] truncate inline-block align-middle">{getAccessLogSummary(row, t)}</span>
                             </td>
                           </tr>
                         ))}
@@ -431,19 +408,6 @@ export default function AuditLog() {
         </>
       )}
 
-      <Dialog open={!!viewValueRow} onOpenChange={(open) => !open && setViewValueRow(null)}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
-          <DialogHeader><DialogTitle>{t('audit.viewFullValue')}</DialogTitle></DialogHeader>
-          <div className="overflow-auto space-y-4 flex-1 min-h-0">
-            {viewValueRow && (
-              <div>
-                <p className="text-sm font-medium mb-1">{t('audit.newValue')}</p>
-                <pre className="text-xs bg-muted p-3 rounded-md overflow-auto max-h-40 whitespace-pre-wrap break-all">{jsonFull(viewValueRow.new_value)}</pre>
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

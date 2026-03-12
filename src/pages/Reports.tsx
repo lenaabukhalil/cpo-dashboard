@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
-import { Download, Check, X } from 'lucide-react'
+import { Download } from 'lucide-react'
 import {
   getSessionsReport,
   getChargerComparison,
@@ -19,8 +19,8 @@ import {
   type Connector,
 } from '../services/api'
 import { useAuth } from '../context/AuthContext'
-import Select, { components, type StylesConfig, type OptionProps, type GroupBase } from 'react-select'
 import { AppSelect } from '../components/shared/AppSelect'
+import { AppMultiSelect } from '../components/shared/AppMultiSelect'
 import { TablePagination } from '../components/TablePagination'
 import { useTranslation } from '../context/LanguageContext'
 
@@ -35,6 +35,10 @@ function useReportsTabs(): { id: TabId; labelKey: string }[] {
 }
 
 const PER_PAGE_DEFAULT = 10
+
+/** Default From/To for Sessions report (same as initial page load). Reused when clearing filters. */
+const DEFAULT_SESSION_FROM = ''
+const DEFAULT_SESSION_TO = ''
 
 function csvEscape(s: string | number | undefined): string {
   const v = String(s ?? '')
@@ -84,13 +88,22 @@ export default function Reports() {
   const { t } = useTranslation()
   const tabs = useReportsTabs()
   const [tab, setTab] = useState<TabId>('sessions')
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
-  const [locationId, _setLocationId] = useState('')
+  const [from, setFrom] = useState(DEFAULT_SESSION_FROM)
+  const [to, setTo] = useState(DEFAULT_SESSION_TO)
   const [locations, setLocations] = useState<Location[]>([])
-  const [, setChargers] = useState<Charger[]>([])
-  const [sessionsData, setSessionsData] = useState<SessionsReportRow[]>([])
+  // Sessions report: null = never loaded, [] = loaded empty, [...] = loaded with data
+  const [sessionsData, setSessionsData] = useState<SessionsReportRow[] | null>(null)
+  const [sessionError, setSessionError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [exportLoading, setExportLoading] = useState(false)
+
+  // Sessions report filters (sent to backend) – multi-select as arrays
+  const [locationIds, setLocationIds] = useState<string[]>([])
+  const [chargerIds, setChargerIds] = useState<string[]>([])
+  const [connectorIds, setConnectorIds] = useState<string[]>([])
+  const [energyMin, setEnergyMin] = useState('')
+  const [energyMax, setEnergyMax] = useState('')
+  const [connectorsForSessionFilter, setConnectorsForSessionFilter] = useState<Connector[]>([])
 
   // Sessions paging
   const [pageSession, setPageSession] = useState(1)
@@ -101,68 +114,19 @@ export default function Reports() {
   const chargerIdToName = useMemo(() => {
     const m = new Map<string, string>()
     allOrgChargers.forEach((c) => {
-      m.set(String(c.id), c.name ?? '')
-      if (c.chargerID) m.set(String(c.chargerID).trim(), c.name ?? '')
+      const name = c.name ?? ''
+      m.set(String(c.id), name)
+      if (c.charger_id != null) m.set(String(c.charger_id), name)
+      if (c.chargerID) m.set(String(c.chargerID).trim(), name)
     })
     return m
   }, [allOrgChargers])
 
-  // Sessions report filters: multi-select (empty = all). Single source for Location.
-  const [selectedLocationNames, setSelectedLocationNames] = useState<string[]>([])
-  const [selectedChargerNames, setSelectedChargerNames] = useState<string[]>([])
-  const [selectedConnectorNames, setSelectedConnectorNames] = useState<string[]>([])
-  const [energyMin, setEnergyMin] = useState('')
-  const [energyMax, setEnergyMax] = useState('')
-
-  const uniqueSessionLocations = useMemo(() => {
-    const set = new Set<string>()
-    sessionsData.forEach((r) => {
-      const v = String(r.Location ?? '').trim()
-      if (v) set.add(v)
-    })
-    return Array.from(set).sort()
-  }, [sessionsData])
-  const uniqueSessionChargers = useMemo(() => {
-    const set = new Set<string>()
-    sessionsData.forEach((r) => {
-      const v = String(r.Charger ?? '').trim()
-      if (v) set.add(v)
-    })
-    return Array.from(set).sort()
-  }, [sessionsData])
-  const uniqueSessionConnectors = useMemo(() => {
-    const set = new Set<string>()
-    sessionsData.forEach((r) => {
-      const v = String(r.Connector ?? '').trim()
-      if (v) set.add(v)
-    })
-    return Array.from(set).sort()
-  }, [sessionsData])
-
-  const filteredSessions = useMemo(() => {
-    let list = sessionsData
-    if (selectedLocationNames.length > 0) {
-      const set = new Set(selectedLocationNames)
-      list = list.filter((r) => set.has(String(r.Location ?? '').trim()))
-    }
-    if (selectedChargerNames.length > 0) {
-      const set = new Set(selectedChargerNames)
-      list = list.filter((r) => set.has(String(r.Charger ?? '').trim()))
-    }
-    if (selectedConnectorNames.length > 0) {
-      const set = new Set(selectedConnectorNames)
-      list = list.filter((r) => set.has(String(r.Connector ?? '').trim()))
-    }
-    const minKwh = energyMin.trim() !== '' ? parseFloat(energyMin) : NaN
-    const maxKwh = energyMax.trim() !== '' ? parseFloat(energyMax) : NaN
-    if (!Number.isNaN(minKwh)) list = list.filter((r) => (Number(r['Energy (KWH)']) ?? 0) >= minKwh)
-    if (!Number.isNaN(maxKwh)) list = list.filter((r) => (Number(r['Energy (KWH)']) ?? 0) <= maxKwh)
-    return list
-  }, [sessionsData, selectedLocationNames, selectedChargerNames, selectedConnectorNames, energyMin, energyMax])
-
+  // Backend returns filtered data; no frontend filtering
+  const sessionsList = sessionsData ?? []
   const paginatedSessions = useMemo(
-    () => filteredSessions.slice((pageSession - 1) * perPageSession, pageSession * perPageSession),
-    [filteredSessions, pageSession, perPageSession]
+    () => sessionsList.slice((pageSession - 1) * perPageSession, pageSession * perPageSession),
+    [sessionsList, pageSession, perPageSession]
   )
 
   // Charger A vs B
@@ -224,16 +188,55 @@ export default function Reports() {
       .catch(() => setAllOrgChargers([]))
   }, [locations])
 
+  // Sessions report: chargers list – when locations selected, filter by them; else all org chargers
+  const sessionChargerOptions = useMemo(() => {
+    if (locationIds.length === 0) return allOrgChargers
+    const set = new Set(locationIds.map((id) => Number(id)))
+    return allOrgChargers.filter((c) => set.has(Number(c.locationId ?? c.id)))
+  }, [allOrgChargers, locationIds])
+
+  // Stable option arrays for multi-select (same references across renders so react-select can match selection)
+  const locationOptions = useMemo(
+    () => locations.map((l) => ({ value: String(l.location_id), label: l.name })),
+    [locations]
+  )
+  const chargerFilterOptions = useMemo(
+    () =>
+      sessionChargerOptions.map((c) => ({
+        value: String(c.charger_id ?? c.id),
+        label: c.name ?? '',
+      })),
+    [sessionChargerOptions]
+  )
+  const connectorFilterOptions = useMemo(
+    () =>
+      connectorsForSessionFilter.map((co) => ({
+        value: String(co.id),
+        label: co.connector_type || co.type || String(co.id),
+      })),
+    [connectorsForSessionFilter]
+  )
+
+  // Sessions report: load connectors when charger filter changes (multi-charger: load all and merge)
   useEffect(() => {
-    if (locationId) {
-      getChargers(Number(locationId)).then((r) => {
-        const d = (r as { data?: Charger[] }).data ?? (r as unknown as Charger[])
-        setChargers(Array.isArray(d) ? d : [])
-      })
-    } else {
-      setChargers([])
+    if (chargerIds.length === 0) {
+      setConnectorsForSessionFilter([])
+      setConnectorIds([])
+      return
     }
-  }, [locationId])
+    Promise.all(chargerIds.map((id) => getConnectors(Number(id))))
+      .then((results) => {
+        const lists = results.map((r) => {
+          const d = (r as { data?: Connector[] }).data ?? (r as unknown as Connector[])
+          return Array.isArray(d) ? d : []
+        })
+        const merged = lists.flat()
+        const byId = new Map<number, Connector>()
+        merged.forEach((co) => byId.set(co.id, co))
+        setConnectorsForSessionFilter(Array.from(byId.values()))
+      })
+      .catch(() => setConnectorsForSessionFilter([]))
+  }, [chargerIds])
 
   useEffect(() => {
     if (locationAId) {
@@ -307,16 +310,57 @@ export default function Reports() {
     } else setChargersForConnectorB([])
   }, [connectorLocBId])
 
-  const loadSessions = () => {
-    if (!from?.trim() || !to?.trim()) return
+  const buildSessionsReportParams = () => {
     const f = from.trim()
-    const t = to.trim()
+    const toVal = to.trim()
+    const params: Parameters<typeof getSessionsReport>[0] = { from: f, to: toVal }
+    if (locationIds.length > 0) params.locationIds = locationIds.join(',')
+    if (chargerIds.length > 0) params.chargerIds = chargerIds.join(',')
+    if (connectorIds.length > 0) params.connectorIds = connectorIds.join(',')
+    if (energyMin.trim() !== '') params.energyMin = energyMin.trim()
+    if (energyMax.trim() !== '') params.energyMax = energyMax.trim()
+    return params
+  }
+
+  const loadSessions = () => {
+    const f = from.trim()
+    const toVal = to.trim()
+    if (!f || !toVal) {
+      setSessionError(t('reports.validationDateRequired') || 'From and To dates are required')
+      return
+    }
+    const fromDate = new Date(f)
+    const toDate = new Date(toVal)
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+      setSessionError(t('reports.validationInvalidDate') || 'Please enter valid From and To dates')
+      return
+    }
+    if (fromDate > toDate) {
+      setSessionError(t('reports.validationFromBeforeTo') || 'From date must be before or equal to To date')
+      return
+    }
+    const minKwh = energyMin.trim() !== '' ? parseFloat(energyMin) : NaN
+    const maxKwh = energyMax.trim() !== '' ? parseFloat(energyMax) : NaN
+    if (!Number.isNaN(minKwh) && !Number.isNaN(maxKwh) && minKwh > maxKwh) {
+      setSessionError(t('reports.validationEnergyRange') || 'Energy Min must be less than or equal to Energy Max')
+      return
+    }
+    setSessionError(null)
     setLoading(true)
     setPageSession(1)
-    getSessionsReport({ from: f, to: t })
+    getSessionsReport(buildSessionsReportParams())
       .then((r) => {
+        if (!(r as { success?: boolean }).success && (r as { message?: string }).message) {
+          setSessionError((r as { message: string }).message)
+          setSessionsData([])
+          return
+        }
         const d = (r as { data?: SessionsReportRow[] }).data ?? (r as unknown as { data?: SessionsReportRow[] }).data
         setSessionsData(Array.isArray(d) ? d : [])
+      })
+      .catch((err) => {
+        setSessionError(err?.message || (err?.payload?.message as string) || 'Failed to load sessions')
+        setSessionsData([])
       })
       .finally(() => setLoading(false))
   }
@@ -365,30 +409,43 @@ export default function Reports() {
       .finally(() => setLoadingCompareConnector(false))
   }
 
-  const exportSessionsCsv = (data: SessionsReportRow[] = sessionsData) => {
-    const headers = ['Start Date/Time', 'Session ID', 'Location', 'Charger', 'Connector', 'Energy (KWH)', 'Amount (JOD)', 'mobile']
-    const rows = data.map((r) => {
-      const raw = r as Record<string, unknown>
-      const chargerDisplay = chargerIdToName.get(String(r.Charger ?? '').trim()) ?? (raw.Charger as string | number | undefined)
-      return [
-        csvEscape(raw['Start Date/Time'] as string | number | undefined),
-        csvEscape(raw['Session ID'] as string | number | undefined),
-        csvEscape(raw.Location as string | number | undefined),
-        csvEscape(chargerDisplay),
-        csvEscape(raw.Connector as string | number | undefined),
-        csvEscape(raw['Energy (KWH)'] as string | number | undefined),
-        csvEscape((raw['Amount (JOD)'] ?? raw['Amount (JOD) mobile']) as string | number | undefined),
-        csvEscape(raw.mobile as string | number | undefined),
-      ]
-    })
-    const csv = [headers.join(','), ...rows.map((row) => row.join(','))].join('\r\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `sessions-${from || 'from'}-${to || 'to'}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+  const exportSessionsCsv = () => {
+    const f = from.trim()
+    const toVal = to.trim()
+    if (!f || !toVal) {
+      setSessionError(t('reports.validationDateRequired') || 'From and To dates are required')
+      return
+    }
+    setExportLoading(true)
+    getSessionsReport(buildSessionsReportParams())
+      .then((r) => {
+        const data = (r as { data?: SessionsReportRow[] }).data ?? (r as unknown as { data?: SessionsReportRow[] }).data
+        const list = Array.isArray(data) ? data : []
+        const headers = ['Start Date/Time', 'Session ID', 'Location', 'Charger', 'Connector', 'Energy (KWH)', 'Amount (JOD)', 'mobile']
+        const rows = list.map((r) => {
+          const raw = r as Record<string, unknown>
+          const chargerDisplay = chargerIdToName.get(String(r.Charger ?? '').trim()) ?? (raw.Charger as string | number | undefined)
+          return [
+            csvEscape(raw['Start Date/Time'] as string | number | undefined),
+            csvEscape(raw['Session ID'] as string | number | undefined),
+            csvEscape(raw.Location as string | number | undefined),
+            csvEscape(chargerDisplay),
+            csvEscape(raw.Connector as string | number | undefined),
+            csvEscape(raw['Energy (KWH)'] as string | number | undefined),
+            csvEscape((raw['Amount (JOD)'] ?? raw['Amount (JOD) mobile']) as string | number | undefined),
+            csvEscape(raw.mobile as string | number | undefined),
+          ]
+        })
+        const csv = [headers.join(','), ...rows.map((row) => row.join(','))].join('\r\n')
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `sessions-${f}-${t}.csv`
+        a.click()
+        URL.revokeObjectURL(url)
+      })
+      .finally(() => setExportLoading(false))
   }
 
   const daysA = useMemo(() => (startA && endA ? daysBetween(startA, endA) : 1), [startA, endA])
@@ -406,139 +463,16 @@ export default function Reports() {
   const scoreConnectorB = useMemo(() => connectorScore(compareConnectorB, daysConnB), [compareConnectorB, daysConnB])
   const bestConnector = scoreConnectorA >= scoreConnectorB ? 'A' : 'B'
 
-  // Sessions report: multi-select options (from report data)
-  type SessionFilterOption = { value: string; label: string }
-  const sessionLocationOptions = useMemo<SessionFilterOption[]>(
-    () => uniqueSessionLocations.map((name) => ({ value: name, label: name })),
-    [uniqueSessionLocations]
-  )
-  const sessionChargerOptions = useMemo<SessionFilterOption[]>(
-    () => uniqueSessionChargers.map((rawValue) => ({ value: rawValue, label: chargerIdToName.get(rawValue) ?? rawValue })),
-    [uniqueSessionChargers, chargerIdToName]
-  )
-  const sessionConnectorOptions = useMemo<SessionFilterOption[]>(
-    () => uniqueSessionConnectors.map((name) => ({ value: name, label: name })),
-    [uniqueSessionConnectors]
-  )
-
-  const multiSelectStyles: StylesConfig<SessionFilterOption, true> = useMemo(
-    () => ({
-      control: (base, state) => ({
-        ...base,
-        minHeight: 40,
-        borderRadius: '8px',
-        borderColor: state.isFocused ? 'hsl(var(--ring))' : 'hsl(var(--input))',
-        backgroundColor: 'hsl(var(--background))',
-        '&:hover': { borderColor: 'hsl(var(--ring))' },
-        boxShadow: state.isFocused ? '0 0 0 2px hsl(var(--ring) / 0.2)' : 'none',
-      }),
-      valueContainer: (base) => ({ ...base, paddingLeft: 10, paddingRight: 8 }),
-      placeholder: (base) => ({ ...base, color: 'hsl(var(--muted-foreground))' }),
-      multiValue: (base) => ({ ...base, borderRadius: 6, backgroundColor: 'hsl(var(--accent))', color: 'hsl(var(--accent-foreground))' }),
-      multiValueLabel: (base) => ({ ...base, color: 'hsl(var(--accent-foreground))' }),
-      menu: (base) => ({
-        ...base,
-        zIndex: 9999,
-        backgroundColor: 'hsl(var(--popover))',
-        border: '1px solid hsl(var(--border))',
-        borderRadius: '8px',
-        boxShadow: '0 4px 12px rgb(0 0 0 / 0.15)',
-      }),
-      option: (base, state) => ({
-        ...base,
-        fontSize: 14,
-        backgroundColor: state.isSelected
-          ? 'hsl(var(--primary) / 0.2)'
-          : state.isFocused
-            ? 'hsl(var(--accent))'
-            : 'transparent',
-        color: state.isSelected
-          ? 'hsl(var(--foreground))'
-          : state.isFocused
-            ? 'hsl(var(--accent-foreground))'
-            : 'hsl(var(--foreground))',
-        cursor: 'pointer',
-        fontWeight: state.isSelected ? 600 : undefined,
-      }),
-      indicatorSeparator: () => ({ display: 'none' }),
-    }),
-    []
-  )
-
-  // في القائمة المنسدلة: ✓ للمحدد + X لإلغاء التحديد من الفلتر
-  type SelectPropsWithDeselect = React.ComponentProps<typeof Select<SessionFilterOption, true, GroupBase<SessionFilterOption>>> & {
-    onDeselectOption?: (value: string) => void
-  }
-  const SelectWithDeselect = Select as React.ComponentType<SelectPropsWithDeselect>
-  const SessionFilterOptionWithCheck = useMemo(
-    () =>
-      function OptionWithCheck(props: OptionProps<SessionFilterOption, true, GroupBase<SessionFilterOption>>) {
-        const onDeselect = (props.selectProps as SelectPropsWithDeselect).onDeselectOption
-        const data = props.data as SessionFilterOption
-        return (
-          <components.Option {...props}>
-            <div className="flex items-center justify-between gap-2 w-full">
-              <span>{data.label}</span>
-              {props.isSelected && (
-                <span className="flex items-center gap-1 shrink-0">
-                  <Check className="h-4 w-4 text-primary" aria-hidden />
-                  {onDeselect && (
-                    <button
-                      type="button"
-                      className="p-0.5 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      aria-label="Remove from filter"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onDeselect(data.value)
-                      }}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                </span>
-              )}
-            </div>
-          </components.Option>
-        )
-      },
-    []
-  )
-
   const clearSessionFilters = () => {
-    setSelectedLocationNames([])
-    setSelectedChargerNames([])
-    setSelectedConnectorNames([])
+    setLocationIds([])
+    setChargerIds([])
+    setConnectorIds([])
     setEnergyMin('')
     setEnergyMax('')
     setPageSession(1)
+    setSessionsData(null)
+    setSessionError(null)
   }
-
-  const hasActiveSessionFilters =
-    selectedLocationNames.length > 0 ||
-    selectedChargerNames.length > 0 ||
-    selectedConnectorNames.length > 0 ||
-    energyMin.trim() !== '' ||
-    energyMax.trim() !== ''
-
-  const activeFiltersSummary = useMemo(() => {
-    const parts: string[] = []
-    if (selectedLocationNames.length > 0) {
-      parts.push(`Location: ${selectedLocationNames.length === 1 ? selectedLocationNames[0] : selectedLocationNames.join(', ')}`)
-    }
-    if (selectedChargerNames.length > 0) {
-      const labels = selectedChargerNames.map((v) => chargerIdToName.get(v) ?? v)
-      parts.push(`Charger: ${labels.length === 1 ? labels[0] : labels.join(', ')}`)
-    }
-    if (selectedConnectorNames.length > 0) {
-      parts.push(`Connector: ${selectedConnectorNames.length === 1 ? selectedConnectorNames[0] : selectedConnectorNames.join(', ')}`)
-    }
-    if (energyMin.trim() !== '' || energyMax.trim() !== '') {
-      const min = energyMin.trim() || '—'
-      const max = energyMax.trim() || '—'
-      parts.push(`Energy: ${min}–${max} kWh`)
-    }
-    return parts.join(' | ')
-  }, [selectedLocationNames, selectedChargerNames, selectedConnectorNames, energyMin, energyMax, chargerIdToName])
 
   return (
     <div className="space-y-6">
@@ -560,14 +494,15 @@ export default function Reports() {
         <Card className="border border-border">
           <CardHeader className="flex flex-row items-center justify-between gap-2">
             <CardTitle className="text-base">{t('reports.tab.sessions')}</CardTitle>
-            {sessionsData.length > 0 && (
-              <Button type="button" variant="outline" size="sm" onClick={() => exportSessionsCsv(filteredSessions)} className="shrink-0 gap-2">
+            {(from.trim() && to.trim()) && (
+              <Button type="button" variant="outline" size="sm" onClick={exportSessionsCsv} disabled={exportLoading} className="shrink-0 gap-2">
                 <Download className="h-4 w-4" />
-                {t('reports.exportCsv')}
+                {exportLoading ? t('reports.loading') : t('reports.exportCsv')}
               </Button>
             )}
           </CardHeader>
           <CardContent>
+            {/* Filters: all sent to backend on Load sessions */}
             <div className="flex flex-wrap items-end gap-4 mb-4 pb-4 border-b border-border">
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">{t('reports.from')}</Label>
@@ -577,142 +512,69 @@ export default function Reports() {
                 <Label className="text-xs text-muted-foreground">{t('reports.to')}</Label>
                 <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-40" />
               </div>
-              <Button type="button" onClick={loadSessions} disabled={loading || !from?.trim() || !to?.trim()}>
+              <div className="space-y-1.5 min-w-[180px]">
+                <Label className="text-xs text-muted-foreground">{t('list.location')}</Label>
+                <AppMultiSelect
+                  options={locationOptions}
+                  value={locationIds}
+                  onChange={setLocationIds}
+                  placeholder={t('reports.allLocations')}
+                  className="bg-background"
+                />
+              </div>
+              <div className="space-y-1.5 min-w-[180px]">
+                <Label className="text-xs text-muted-foreground">{t('list.charger')}</Label>
+                <AppMultiSelect
+                  options={chargerFilterOptions}
+                  value={chargerIds}
+                  onChange={setChargerIds}
+                  placeholder={t('reports.allChargers')}
+                  className="bg-background"
+                />
+              </div>
+              <div className="space-y-1.5 min-w-[180px]">
+                <Label className="text-xs text-muted-foreground">{t('list.connectors')}</Label>
+                <AppMultiSelect
+                  options={connectorFilterOptions}
+                  value={connectorIds}
+                  onChange={setConnectorIds}
+                  placeholder={t('reports.allConnectors')}
+                  className="bg-background"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Energy (KWH)</Label>
+                <div className="flex items-center gap-2">
+                  <Input type="number" placeholder="Min" value={energyMin} onChange={(e) => setEnergyMin(e.target.value)} className="w-24 h-10 text-sm rounded-lg" min={0} step="any" />
+                  <span className="text-muted-foreground">–</span>
+                  <Input type="number" placeholder="Max" value={energyMax} onChange={(e) => setEnergyMax(e.target.value)} className="w-24 h-10 text-sm rounded-lg" min={0} step="any" />
+                </div>
+              </div>
+              <Button type="button" onClick={loadSessions} disabled={loading}>
                 {loading ? t('reports.loading') : t('reports.loadSessions')}
               </Button>
+              {(from.trim() || to.trim() || locationIds.length > 0 || chargerIds.length > 0 || connectorIds.length > 0 || energyMin.trim() || energyMax.trim()) && (
+                <Button type="button" variant="outline" size="sm" onClick={clearSessionFilters}>
+                  Clear filters
+                </Button>
+              )}
             </div>
-            {loading && sessionsData.length === 0 ? (
+
+            {sessionError && <p className="text-sm text-destructive py-2">{sessionError}</p>}
+
+            {loading && sessionsData === null ? (
               <p className="text-sm text-muted-foreground py-4">{t('reports.loading')}</p>
-            ) : sessionsData.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4">{t('reports.loadReportHint')}</p>
+            ) : sessionsData === null ? (
+              <p className="text-sm text-muted-foreground py-4">{t('reports.selectFiltersAndLoad')}</p>
+            ) : sessionsList.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4">{t('reports.noSessionsMatch')}</p>
             ) : (
               <>
-                {/* Filters: one Location filter (multi-select), Charger, Connector, Energy */}
-                <div className="mb-4 p-4 rounded-xl border border-border bg-muted/20 space-y-4">
-                  <p className="text-sm font-medium text-foreground">{t('reports.filters')}</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground">Location</Label>
-                      <SelectWithDeselect
-                        isMulti
-                        options={sessionLocationOptions}
-                        value={sessionLocationOptions.filter((o) => selectedLocationNames.includes(o.value))}
-                        onChange={(opts) => {
-                          setSelectedLocationNames(opts ? opts.map((o) => o.value) : [])
-                          setPageSession(1)
-                        }}
-                        placeholder={t('reports.allLocations')}
-                        isClearable
-                        closeMenuOnSelect={false}
-                        hideSelectedOptions={false}
-                        styles={multiSelectStyles}
-                        components={{ Option: SessionFilterOptionWithCheck }}
-                        onDeselectOption={(val: string) => {
-                          setSelectedLocationNames((prev) => prev.filter((v) => v !== val))
-                          setPageSession(1)
-                        }}
-                        menuPortalTarget={typeof document !== 'undefined' ? document.body : undefined}
-                        menuPosition="fixed"
-                        classNamePrefix="session-filter"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground">Charger</Label>
-                      <SelectWithDeselect
-                        isMulti
-                        options={sessionChargerOptions}
-                        value={sessionChargerOptions.filter((o) => selectedChargerNames.includes(o.value))}
-                        onChange={(opts) => {
-                          setSelectedChargerNames(opts ? opts.map((o) => o.value) : [])
-                          setPageSession(1)
-                        }}
-                        placeholder={t('reports.allChargers')}
-                        isClearable
-                        closeMenuOnSelect={false}
-                        hideSelectedOptions={false}
-                        styles={multiSelectStyles}
-                        components={{ Option: SessionFilterOptionWithCheck }}
-                        onDeselectOption={(val: string) => {
-                          setSelectedChargerNames((prev) => prev.filter((v) => v !== val))
-                          setPageSession(1)
-                        }}
-                        menuPortalTarget={typeof document !== 'undefined' ? document.body : undefined}
-                        menuPosition="fixed"
-                        classNamePrefix="session-filter"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground">Connector</Label>
-                      <SelectWithDeselect
-                        isMulti
-                        options={sessionConnectorOptions}
-                        value={sessionConnectorOptions.filter((o) => selectedConnectorNames.includes(o.value))}
-                        onChange={(opts) => {
-                          setSelectedConnectorNames(opts ? opts.map((o) => o.value) : [])
-                          setPageSession(1)
-                        }}
-                        placeholder={t('reports.allConnectors')}
-                        isClearable
-                        closeMenuOnSelect={false}
-                        hideSelectedOptions={false}
-                        styles={multiSelectStyles}
-                        components={{ Option: SessionFilterOptionWithCheck }}
-                        onDeselectOption={(val: string) => {
-                          setSelectedConnectorNames((prev) => prev.filter((v) => v !== val))
-                          setPageSession(1)
-                        }}
-                        menuPortalTarget={typeof document !== 'undefined' ? document.body : undefined}
-                        menuPosition="fixed"
-                        classNamePrefix="session-filter"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground">Energy (KWH)</Label>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Input
-                          type="number"
-                          placeholder="Min"
-                          value={energyMin}
-                          onChange={(e) => {
-                            setEnergyMin(e.target.value)
-                            setPageSession(1)
-                          }}
-                          className="w-24 h-10 text-sm rounded-lg"
-                          min={0}
-                          step="any"
-                        />
-                        <span className="text-muted-foreground">–</span>
-                        <Input
-                          type="number"
-                          placeholder="Max"
-                          value={energyMax}
-                          onChange={(e) => {
-                            setEnergyMax(e.target.value)
-                            setPageSession(1)
-                          }}
-                          className="w-24 h-10 text-sm rounded-lg"
-                          min={0}
-                          step="any"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  {hasActiveSessionFilters && (
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-3 border-t border-border">
-                      <span className="text-xs font-medium text-muted-foreground shrink-0">Active filters:</span>
-                      <span className="text-sm text-foreground min-w-0">{activeFiltersSummary}</span>
-                      <Button type="button" variant="outline" size="sm" onClick={clearSessionFilters} className="shrink-0 h-8 text-primary border-primary/30 hover:bg-primary/10">
-                        Clear all
-                      </Button>
-                    </div>
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    Showing {filteredSessions.length} of {sessionsData.length} sessions
-                  </p>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                <p className="text-xs text-muted-foreground mb-2">
+                  Showing {sessionsList.length} session{sessionsList.length !== 1 ? 's' : ''}
+                </p>
+                <div className="overflow-x-auto table-wrap">
+                  <table className="w-full text-sm min-w-[600px]">
                     <thead>
                       <tr className="border-b border-border">
                         <th className="text-left py-2 font-medium">Start Date/Time</th>
@@ -721,8 +583,8 @@ export default function Reports() {
                         <th className="text-left py-2 font-medium">Charger</th>
                         <th className="text-left py-2 font-medium">Connector</th>
                         <th className="text-right py-2 font-medium">Energy (KWH)</th>
-                        <th className="text-right py-2 font-medium">Amount (JOD)</th>
-                        <th className="text-left py-2 font-medium">mobile</th>
+                        <th className="text-right py-2 font-medium pr-6">Amount (JOD)</th>
+                        <th className="text-left py-2 font-medium pl-4 min-w-[120px]">mobile</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -734,15 +596,15 @@ export default function Reports() {
                           <td className="py-2">{chargerIdToName.get(String(r.Charger ?? '').trim()) ?? r.Charger ?? '—'}</td>
                           <td className="py-2">{String(r.Connector ?? '—')}</td>
                           <td className="py-2 text-right">{String(r['Energy (KWH)'] ?? '—')}</td>
-                          <td className="py-2 text-right">{String(r['Amount (JOD)'] ?? '—')}</td>
-                          <td className="py-2">{String(r.mobile ?? '—')}</td>
+                          <td className="py-2 text-right pr-6">{String(r['Amount (JOD)'] ?? '—')}</td>
+                          <td className="py-2 pl-4 min-w-[120px]">{String(r.mobile ?? '—')}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
                 <TablePagination
-                  total={filteredSessions.length}
+                  total={sessionsList.length}
                   page={pageSession}
                   perPage={perPageSession}
                   onPageChange={setPageSession}

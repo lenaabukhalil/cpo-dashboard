@@ -136,7 +136,7 @@ export default function Dashboard() {
         </div>
       </section>
 
-      {/* Summary cards – تظهر فوراً، القيم تتحمل لاحقاً */}
+      {/* Summary cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="border border-border">
           <CardContent className="p-4 flex items-center justify-between gap-4">
@@ -203,7 +203,7 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Offline alert – يظهر فقط بعد التحميل إذا في أوفلاين */}
+      {/* Offline alert */}
       {!loading && offlineChargers > 0 && (
         <Card className="border-red-200 bg-red-50/50 dark:bg-red-950/20 dark:border-red-900">
           <CardContent className="p-4 flex items-center justify-between flex-wrap gap-2">
@@ -220,7 +220,7 @@ export default function Dashboard() {
         </Card>
       )}
 
-      {/* Chart + Active sessions – الهيكل يظهر فوراً، المحتوى يتحمل */}
+      {/* Chart + Active sessions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="border border-border">
           <CardHeader className="pb-2">
@@ -262,8 +262,8 @@ export default function Dashboard() {
             ) : activeSessionsList.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4">{t('dashboard.noActiveSessions')}</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+              <div className="overflow-x-auto table-wrap">
+                <table className="w-full text-sm min-w-[560px]">
                   <thead>
                     <tr className="border-b border-border">
                       <th className="text-start py-2 ps-2 pe-2 font-medium text-muted-foreground">{t('dashboard.location')}</th>

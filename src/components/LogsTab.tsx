@@ -163,8 +163,8 @@ export default function LogsTab() {
         </div>
 
         <div className="rounded-lg border border-border overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto table-wrap">
+            <table className="w-full text-sm min-w-[560px]">
               <thead>
                 <tr className="border-b border-border bg-muted/40">
                   <th className="text-start py-3 ps-4 pe-4 font-medium text-muted-foreground">{t('logs.time')}</th>

@@ -11,6 +11,7 @@ import {
   type AccessLogEntry,
   type AccessLogFilters,
 } from '../services/api'
+import { getAccessLogSummary } from '../lib/auditLogSummary'
 import { TablePagination } from '../components/TablePagination'
 import { AppSelect } from '../components/shared/AppSelect'
 import { cn } from '../lib/utils'
@@ -27,16 +28,6 @@ function formatTs(ts: string): string {
   if (!ts) return '—'
   const d = new Date(ts)
   return Number.isNaN(d.getTime()) ? ts : d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' })
-}
-
-function jsonPreview(obj: Record<string, unknown> | null, maxLen = 120): string {
-  if (obj == null) return '—'
-  try {
-    const s = JSON.stringify(obj)
-    return s.length <= maxLen ? s : s.slice(0, maxLen) + '…'
-  } catch {
-    return '—'
-  }
 }
 
 function defaultDateRange(): { from: string; to: string } {
@@ -167,7 +158,7 @@ export default function AccessLog() {
               <label className="text-xs text-muted-foreground">{t('audit.from')}</label>
               <input
                 type="date"
-                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                className="h-9 min-h-[44px] rounded-md border border-input bg-background px-3 text-sm sm:text-base md:text-sm date-input-mobile"
                 value={from}
                 onChange={(e) => setFrom(e.target.value)}
               />
@@ -176,7 +167,7 @@ export default function AccessLog() {
               <label className="text-xs text-muted-foreground">{t('audit.to')}</label>
               <input
                 type="date"
-                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                className="h-9 min-h-[44px] rounded-md border border-input bg-background px-3 text-sm sm:text-base md:text-sm date-input-mobile"
                 value={to}
                 onChange={(e) => setTo(e.target.value)}
               />
@@ -245,8 +236,8 @@ export default function AccessLog() {
             <p className="py-8 text-center text-muted-foreground">{t('accessLog.noResults')}</p>
           ) : (
             <>
-              <div className="overflow-x-auto -mx-2">
-                <table className="w-full border-collapse text-sm">
+              <div className="overflow-x-auto -mx-2 table-wrap">
+                <table className="w-full border-collapse text-sm min-w-[600px]">
                   <thead>
                     <tr className="border-b border-border">
                       <th className="text-left p-3 font-medium">{t('audit.timestamp')}</th>
@@ -254,7 +245,7 @@ export default function AccessLog() {
                       <th className="text-left p-3 font-medium">{t('audit.action')}</th>
                       <th className="text-left p-3 font-medium">{t('audit.entityType')}</th>
                       <th className="text-left p-3 font-medium">{t('audit.entityId')}</th>
-                      <th className="text-left p-3 font-medium max-w-[140px]">{t('audit.newValue')}</th>
+                      <th className="text-left p-3 font-medium max-w-[140px]">{t('audit.details')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -280,8 +271,8 @@ export default function AccessLog() {
                         </td>
                         <td className="p-3">{row.entity_type}</td>
                         <td className="p-3 font-mono text-xs">{row.entity_id ?? '—'}</td>
-                        <td className="p-3 text-muted-foreground max-w-[140px] truncate" title={jsonPreview(row.new_value, 300)}>
-                          {jsonPreview(row.new_value)}
+                        <td className="p-3 text-muted-foreground max-w-[140px] truncate" title={getAccessLogSummary(row, t)}>
+                          {getAccessLogSummary(row, t)}
                         </td>
                       </tr>
                     ))}

@@ -254,8 +254,8 @@ export default function SupportMaintenance() {
               onAction={openCreate}
             />
           ) : (
-            <div className="rounded-xl border border-border overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="rounded-xl border border-border overflow-hidden table-wrap">
+              <table className="w-full text-sm min-w-[640px]">
                 <thead>
                   <tr className="bg-muted/40">
                     <th className="text-left py-3 px-4 font-semibold">Title</th>

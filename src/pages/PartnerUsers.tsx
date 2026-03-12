@@ -477,8 +477,8 @@ export default function PartnerUsers() {
           ) : list.length === 0 ? (
             <p className="text-sm text-muted-foreground py-6 text-center">No users found for this organization.</p>
           ) : (
-            <div className="rounded-xl border border-border overflow-hidden">
-              <table className="w-full text-sm border-collapse">
+            <div className="rounded-xl border border-border overflow-hidden table-wrap">
+              <table className="w-full text-sm border-collapse min-w-[640px]">
                 <thead>
                   <tr className="bg-muted/40 border-b border-border">
                     <th className="text-start py-3 px-4 font-semibold">{t('list.name')}</th>

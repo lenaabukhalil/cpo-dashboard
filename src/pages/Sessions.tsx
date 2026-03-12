@@ -27,9 +27,16 @@ interface LocationWithChargers extends LocationType {
 
 function StatusBadge({ status }: { status: string }) {
   const v = (status ?? '').toLowerCase()
-  const isOnline = ['online', 'available', 'free'].includes(v)
-  const isOffline = ['offline', 'unavailable', 'faulted'].includes(v)
-  const style = isOnline ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : isOffline ? 'bg-rose-500/15 text-rose-700 dark:text-rose-400' : 'bg-muted text-muted-foreground'
+  const isAvailable = ['online', 'available', 'free'].includes(v)
+  const isUnavailable = ['offline', 'unavailable', 'faulted'].includes(v)
+  const isBusyOrPreparing = ['busy', 'preparing', 'charging', 'suspended', 'reserved', 'finishing'].includes(v)
+  const style = isAvailable
+    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
+    : isUnavailable
+      ? 'bg-rose-500/15 text-rose-700 dark:text-rose-400'
+      : isBusyOrPreparing
+        ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-400/50'
+        : 'bg-muted text-muted-foreground'
   return <Badge variant="outline" className={cn('text-xs font-medium', style)}>{status || '—'}</Badge>
 }
 
@@ -39,8 +46,10 @@ export default function Sessions() {
   const [loading, setLoading] = useState(false)
   const [statusStats, setStatusStats] = useState<{
     totalChargers: number
+    totalConnectors: number
     onlineChargers: number
     availableConnector: number
+    busyPreparingConnector: number
     offlineChargers: number
     unavailableConnector: number
   } | null>(null)
@@ -108,12 +117,23 @@ export default function Sessions() {
         setConnectorStatusList(list)
         const uniqueChargers = new Set(list.map((c: { chargerId?: number }) => c.chargerId).filter(Boolean)).size
         const totalChargers = uniqueChargers > 0 ? uniqueChargers : chargersOnline
+        const totalConnectors = list.length
         const availableConnector = list.filter((c: { status?: string }) => (c.status || '').toLowerCase() === 'available').length
-        const unavailableConnector = list.length - availableConnector
+        // Busy/preparing: not counted as available or as online; separate card and distinct badge style
+        const busyPreparingStatuses = ['busy', 'preparing', 'charging', 'suspended', 'reserved', 'finishing']
+        const busyPreparingConnector = list.filter((c: { status?: string }) =>
+          busyPreparingStatuses.includes((c.status || '').toLowerCase())
+        ).length
+        // Unavailable Connector: only status === 'error' (per requirement)
+        const unavailableConnector = list.filter((c: { status?: string }) =>
+          (c.status || '').toLowerCase() === 'error'
+        ).length
         setStatusStats({
           totalChargers: totalChargers,
+          totalConnectors,
           onlineChargers: chargersOnline,
           availableConnector,
+          busyPreparingConnector,
           offlineChargers: Math.max(0, totalChargers - chargersOnline),
           unavailableConnector,
         })
@@ -161,7 +181,7 @@ export default function Sessions() {
               <p className="text-sm text-muted-foreground py-8">{t('common.loading')}</p>
             ) : statusStats ? (
               <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
                 <div className="rounded-lg border border-border bg-card p-4 flex items-start justify-between gap-2">
                   <div>
                     <p className="text-sm text-muted-foreground">{t('monitor.totalChargers')}</p>
@@ -178,8 +198,8 @@ export default function Sessions() {
                 </div>
                 <div className="rounded-lg border border-border bg-card p-4 flex items-start justify-between gap-2">
                   <div>
-                    <p className="text-sm text-muted-foreground">{t('monitor.availableConnector')}</p>
-                    <p className="text-2xl font-bold mt-1 text-green-600">{statusStats.availableConnector}</p>
+                    <p className="text-sm text-muted-foreground">{t('monitor.availableConnectorOnTotal')}</p>
+                    <p className="text-2xl font-bold mt-1 text-green-600">{statusStats.availableConnector} / {statusStats.totalConnectors}</p>
                   </div>
                   <CheckCircle className="h-8 w-8 shrink-0 text-green-600" />
                 </div>

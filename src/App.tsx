@@ -34,7 +34,6 @@ function isManager(roleName: string | undefined): boolean {
   return (roleName || '').toLowerCase() === 'manager'
 }
 
-/** يوجّه المستخدم حسب صلاحياته: Engineer, Accountant, Manager لا يدخلون لصفحات غير المسموح بها. Operator لا يسمح له بتسجيل الدخول من الـ API. */
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
   const location = useLocation()

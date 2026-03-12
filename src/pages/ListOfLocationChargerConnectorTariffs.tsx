@@ -6,6 +6,7 @@ import {
   getLocations,
   getChargers,
   getConnectors,
+  getConnectorsStatus,
   getTariffs,
   type Location as LocationType,
   type Charger,
@@ -41,6 +42,9 @@ function statusLabel(v: string, t: (k: string) => string): string {
   if (v === 'available' || v === 'online') return t('list.available')
   if (v === 'unavailable' || v === 'offline') return t('list.unavailable')
   if (v === 'busy' || v === 'charging') return t('list.busy')
+  if (v === 'preparing') return t('list.preparing')
+  if (v === 'booked') return t('list.booked')
+  if (v === 'error' || v === 'faulted') return t('list.error')
   return v || '—'
 }
 
@@ -72,9 +76,13 @@ function StatusPill({ value }: { value: string }) {
         ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300'
         : v === 'busy' || v === 'charging'
           ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
-          : v === 'error' || v === 'faulted'
+          : v === 'preparing'
             ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
-            : 'bg-muted text-muted-foreground'
+            : v === 'booked'
+              ? 'bg-slate-100 text-slate-800 dark:bg-slate-900/30 dark:text-slate-300'
+              : v === 'error' || v === 'faulted'
+                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+                : 'bg-muted text-muted-foreground'
   return (
     <span className={cn('inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ring-1 ring-black/5 shadow-sm', style)}>
       {statusLabel(v, t)}
@@ -84,11 +92,13 @@ function StatusPill({ value }: { value: string }) {
 
 function formatChargerTime(c: Charger): string {
   const rec = c as unknown as Record<string, unknown>
-  const raw = c.last_updated ?? rec.updated_at ?? rec.last_seen ?? rec.last_heartbeat ?? rec.created_at
+  // API returns ocpi_last_update AS time; prefer time then other fields
+  const raw = c.time ?? rec.time ?? c.last_updated ?? rec.updated_at ?? rec.last_seen ?? rec.last_heartbeat ?? rec.created_at
   if (raw == null || raw === '') return '—'
   const d = new Date(typeof raw === 'string' ? raw : Number(raw) * (Number(raw) > 1e12 ? 1 : 1000))
   if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' })
+  // Show ISO-like timestamp (e.g. 2026-03-10T02:52:54.000Z) for consistency with backend
+  return d.toISOString()
 }
 
 interface ChargerRow extends Charger {
@@ -167,7 +177,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
               const chargers = Array.isArray(chList) ? chList : []
               return Promise.all(
                 chargers.map((ch: Charger) =>
-                  getConnectors(ch.id).then((connRes) => {
+                  getConnectors(ch.id, undefined, { skipCache: true }).then((connRes) => {
                     const connList = (connRes as { data?: Connector[] }).data ?? []
                     const conns = Array.isArray(connList) ? connList : []
                     return conns.map((conn: Connector) => ({
@@ -181,9 +191,29 @@ export default function ListOfLocationChargerConnectorTariffs() {
               ).then((rows) => rows.flat())
             })
           )
-        ).then((arrays) => {
+        ).then(async (arrays) => {
           const flat = (arrays ?? []).flat()
-          setConnectorRows(flat)
+          // Use same status source as Monitor so table matches sessions view
+          try {
+            const statusRes = await getConnectorsStatus({ skipCache: true })
+            const statusList = (statusRes as { data?: { chargerId?: number; connectorId?: number; status?: string }[] }).data ?? []
+            const statusMap = new Map<string, string>()
+            statusList.forEach((s) => {
+              const cid = s.chargerId ?? (s as Record<string, unknown>).charger_id
+              const connId = s.connectorId ?? (s as Record<string, unknown>).connector_id
+              if (cid != null && connId != null) statusMap.set(`${cid}-${connId}`, (s.status ?? '').trim())
+            })
+            const merged = flat.map((r) => {
+              const liveStatus = statusMap.get(`${r.chargerId}-${r.connector.id}`)
+              if (liveStatus !== undefined && liveStatus !== '') {
+                return { ...r, connector: { ...r.connector, status: liveStatus } }
+              }
+              return r
+            })
+            setConnectorRows(merged)
+          } catch {
+            setConnectorRows(flat)
+          }
           return flat
         })
       })
@@ -384,8 +414,8 @@ export default function ListOfLocationChargerConnectorTariffs() {
           ) : (
             <>
               {activeTab === 'location' && (
-                <div className="overflow-x-auto border rounded-lg border-border bg-white">
-                  <table className="w-full text-sm border-collapse">
+                <div className="overflow-x-auto border rounded-lg border-border bg-white table-wrap">
+                  <table className="w-full text-sm border-collapse min-w-[640px]">
                     <thead>
                       <tr className="bg-[#f3f4f6] dark:bg-muted/50">
                         <th className="text-left py-3 px-4 font-medium text-muted-foreground rtl:text-right">{t('list.name')}</th>
@@ -559,8 +589,8 @@ export default function ListOfLocationChargerConnectorTariffs() {
               )}
 
               {activeTab === 'connector' && (
-                <div className="overflow-x-auto border rounded-lg border-border bg-white">
-                  <table className="w-full text-sm border-collapse">
+                <div className="overflow-x-auto border rounded-lg border-border bg-white table-wrap">
+                  <table className="w-full text-sm border-collapse min-w-[640px]">
                     <thead>
                       <tr className="bg-[#f3f4f6] dark:bg-muted/50">
                         <th className="text-left py-3 px-4 font-medium text-muted-foreground rtl:text-right">{t('list.organization')}</th>
@@ -597,8 +627,8 @@ export default function ListOfLocationChargerConnectorTariffs() {
               )}
 
               {activeTab === 'tariff' && (
-                <div className="overflow-x-auto border rounded-lg border-border bg-white">
-                  <table className="w-full text-sm border-collapse">
+                <div className="overflow-x-auto border rounded-lg border-border bg-white table-wrap">
+                  <table className="w-full text-sm border-collapse min-w-[640px]">
                     <thead>
                       <tr className="bg-[#f3f4f6] dark:bg-muted/50">
                         <th className="text-left py-3 px-4 font-medium text-muted-foreground rtl:text-right">{t('list.location')}</th>

@@ -290,8 +290,8 @@ export default function Locations() {
                 <EmptyState title="No Locations" description="No locations found." />
               ) : (
                 <>
-                  <div className="overflow-x-auto border rounded-lg border-border">
-                    <table className="w-full text-sm">
+                  <div className="overflow-x-auto border rounded-lg border-border table-wrap">
+                    <table className="w-full text-sm min-w-[560px]">
                       <thead>
                         <tr className="bg-muted/30">
                           <th className="text-left py-3 px-4 font-medium text-muted-foreground">Name</th>

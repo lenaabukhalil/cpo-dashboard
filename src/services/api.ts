@@ -280,6 +280,8 @@ export async function deleteCharger(id: number) {
 
 export interface Charger {
   id: number
+  /** DB column charger_id (matches Partner_Bill.charger_id); use for sessions-report filter when present */
+  charger_id?: number
   name: string
   chargerID: string
   type: string
@@ -288,7 +290,9 @@ export interface Charger {
   max_session_time?: number
   num_connectors?: number
   description?: string
-  /** Last updated / last seen / heartbeat - ISO string or Unix timestamp from API (used for Time column) */
+  /** Last updated from API (ocpi_last_update) - used for List "Time" column */
+  time?: string | number
+  /** Last updated / last seen / heartbeat - ISO string or Unix timestamp from API */
   last_updated?: string | number
   updated_at?: string | number
   last_seen?: string | number
@@ -309,12 +313,19 @@ export interface CreateChargerBody {
   description?: string
 }
 
-// Connectors
-export async function getConnectors(chargerId?: number, id?: number) {
+// Connectors (skipCache: use true when listing so status matches DB / Monitor)
+export async function getConnectors(
+  chargerId?: number,
+  id?: number,
+  opts?: { skipCache?: boolean }
+) {
   const params: Record<string, string> = {}
   if (id != null) params.id = String(id)
   else if (chargerId != null) params.chargerId = String(chargerId)
-  return request<{ data: Connector[] }>('/api/v4/connector', { params })
+  return request<{ data: Connector[] }>('/api/v4/connector', {
+    params,
+    ...(opts?.skipCache && { skipCache: true }),
+  })
 }
 
 export async function createConnector(body: CreateConnectorBody) {
@@ -480,7 +491,7 @@ export async function deleteMaintenanceTicket(id: string) {
   })
 }
 
-// Periodic (Preventive) Maintenance – جدولة صيانة دورية
+// Periodic (Preventive) Maintenance
 export interface PeriodicMaintenance {
   id: string
   organization_id: string
@@ -577,7 +588,7 @@ export interface DashboardStats {
   expendature?: number
 }
 
-// CPO API – فلو CPO يفلتر حسب organization_id من JWT (للـ Operator)
+// CPO API
 const CPO_API = '/api/v4/cpo'
 
 export async function getDashboardStats() {
@@ -620,8 +631,27 @@ export interface LocalSessionRow {
   stop_reason?: string
 }
 
-export async function getSessionsReport(params: { from: string; to: string }) {
-  return request<{ count: number; data: SessionsReportRow[] }>(`${CPO_API}/sessions-report`, { params: { from: params.from, to: params.to } })
+export interface SessionsReportParams {
+  from: string
+  to: string
+  /** Comma-separated location IDs e.g. "1,2,3" */
+  locationIds?: string
+  /** Comma-separated charger IDs e.g. "1,2,3" */
+  chargerIds?: string
+  /** Comma-separated connector IDs e.g. "1,2,3" */
+  connectorIds?: string
+  energyMin?: string
+  energyMax?: string
+}
+
+export async function getSessionsReport(params: SessionsReportParams) {
+  const query: Record<string, string> = { from: params.from, to: params.to }
+  if (params.locationIds != null && String(params.locationIds).trim() !== '') query.locationIds = String(params.locationIds).trim()
+  if (params.chargerIds != null && String(params.chargerIds).trim() !== '') query.chargerIds = String(params.chargerIds).trim()
+  if (params.connectorIds != null && String(params.connectorIds).trim() !== '') query.connectorIds = String(params.connectorIds).trim()
+  if (params.energyMin != null && String(params.energyMin).trim() !== '') query.energyMin = String(params.energyMin).trim()
+  if (params.energyMax != null && String(params.energyMax).trim() !== '') query.energyMax = String(params.energyMax).trim()
+  return request<{ success?: boolean; count: number; data: SessionsReportRow[] }>(`${CPO_API}/sessions-report`, { params: query })
 }
 
 export interface SessionsReportRow {
@@ -645,8 +675,10 @@ export async function getActiveSessionsHistory(hours?: number) {
   })
 }
 
-export async function getConnectorsStatus() {
-  return request<{ count: number; data: ConnectorStatusRow[] }>(`${CPO_API}/connectors-status`)
+export async function getConnectorsStatus(opts?: { skipCache?: boolean }) {
+  return request<{ count: number; data: ConnectorStatusRow[] }>(`${CPO_API}/connectors-status`, {
+    ...(opts?.skipCache && { skipCache: true }),
+  })
 }
 
 export interface ConnectorStatusRow {
