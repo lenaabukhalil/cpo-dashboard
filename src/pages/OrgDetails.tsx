@@ -428,7 +428,7 @@ export default function OrgDetails() {
               {tariffsLoading ? (
                 <div className="py-8 flex justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary" /></div>
               ) : (
-                <div className="rounded-xl border border-border overflow-hidden shadow-sm table-wrap">
+                <div className="rounded-xl border border-border overflow-hidden shadow-sm table-wrap table-wrapper">
                   {tariffs.length === 0 ? (
                     <div className="py-8 text-center text-sm text-muted-foreground">{t('details.noTariffsForConnector')}</div>
                   ) : (

@@ -19,6 +19,7 @@ import { TablePagination } from '../components/TablePagination'
 import { EmptyState } from '../components/EmptyState'
 import { PageTabs } from '../components/PageTabs'
 import { cn } from '../lib/utils'
+import { formatDateTime } from '../lib/dateFormat'
 
 const TAB_IDS = ['location', 'charger', 'connector', 'tariff'] as const
 function useListTabs(): { id: (typeof TAB_IDS)[number]; labelKey: string }[] {
@@ -90,15 +91,11 @@ function StatusPill({ value }: { value: string }) {
   )
 }
 
-function formatChargerTime(c: Charger): string {
+function getChargerTimeRaw(c: Charger): string | number | null | undefined {
   const rec = c as unknown as Record<string, unknown>
   // API returns ocpi_last_update AS time; prefer time then other fields
   const raw = c.time ?? rec.time ?? c.last_updated ?? rec.updated_at ?? rec.last_seen ?? rec.last_heartbeat ?? rec.created_at
-  if (raw == null || raw === '') return '—'
-  const d = new Date(typeof raw === 'string' ? raw : Number(raw) * (Number(raw) > 1e12 ? 1 : 1000))
-  if (Number.isNaN(d.getTime())) return '—'
-  // Show ISO-like timestamp (e.g. 2026-03-10T02:52:54.000Z) for consistency with backend
-  return d.toISOString()
+  return raw as string | number | null | undefined
 }
 
 interface ChargerRow extends Charger {
@@ -414,7 +411,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
           ) : (
             <>
               {activeTab === 'location' && (
-                <div className="overflow-x-auto border rounded-lg border-border bg-white table-wrap">
+                <div className="overflow-x-auto border rounded-lg border-border bg-white table-wrap table-wrapper">
                   <table className="w-full text-sm border-collapse min-w-[640px]">
                     <thead>
                       <tr className="bg-[#f3f4f6] dark:bg-muted/50">
@@ -479,7 +476,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
                             </div>
                           </div>
                         ) : (
-                          <div className="flex-1 min-h-0 overflow-auto">
+                          <div className="flex-1 min-h-0 overflow-auto table-wrapper">
                             <table className="w-full text-sm border-collapse">
                               <thead className="sticky top-0 bg-[#f3f4f6] dark:bg-muted/50 border-b border-border z-10">
                                 <tr>
@@ -500,7 +497,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
                                   >
                                     <td className="py-3 px-4 font-medium text-foreground">{c.name}</td>
                                     <td className="py-3 px-4 text-muted-foreground font-mono text-xs">{c.chargerID ?? c.id}</td>
-                                    <td className="py-3 px-4 text-muted-foreground text-xs">{formatChargerTime(c)}</td>
+                                    <td className="py-3 px-4 text-muted-foreground text-xs">{formatDateTime(getChargerTimeRaw(c))}</td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -545,7 +542,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
                             </div>
                           </div>
                         ) : (
-                          <div className="flex-1 min-h-0 overflow-auto">
+                          <div className="flex-1 min-h-0 overflow-auto table-wrapper">
                             <table className="w-full text-sm border-collapse">
                               <thead className="sticky top-0 bg-[#f3f4f6] dark:bg-muted/50 border-b border-border z-10">
                                 <tr>
@@ -566,7 +563,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
                                   >
                                     <td className="py-3 px-4 font-medium text-foreground">{c.name}</td>
                                     <td className="py-3 px-4 text-muted-foreground font-mono text-xs">{c.chargerID ?? c.id}</td>
-                                    <td className="py-3 px-4 text-muted-foreground text-xs">{formatChargerTime(c)}</td>
+                                    <td className="py-3 px-4 text-muted-foreground text-xs">{formatDateTime(getChargerTimeRaw(c))}</td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -589,7 +586,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
               )}
 
               {activeTab === 'connector' && (
-                <div className="overflow-x-auto border rounded-lg border-border bg-white table-wrap">
+                <div className="overflow-x-auto border rounded-lg border-border bg-white table-wrap table-wrapper">
                   <table className="w-full text-sm border-collapse min-w-[640px]">
                     <thead>
                       <tr className="bg-[#f3f4f6] dark:bg-muted/50">
@@ -627,7 +624,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
               )}
 
               {activeTab === 'tariff' && (
-                <div className="overflow-x-auto border rounded-lg border-border bg-white table-wrap">
+                <div className="overflow-x-auto border rounded-lg border-border bg-white table-wrap table-wrapper">
                   <table className="w-full text-sm border-collapse min-w-[640px]">
                     <thead>
                       <tr className="bg-[#f3f4f6] dark:bg-muted/50">

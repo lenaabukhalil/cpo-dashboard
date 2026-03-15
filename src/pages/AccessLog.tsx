@@ -12,6 +12,7 @@ import {
   type AccessLogFilters,
 } from '../services/api'
 import { getAccessLogSummary } from '../lib/auditLogSummary'
+import { formatDateTime } from '../lib/dateFormat'
 import { TablePagination } from '../components/TablePagination'
 import { AppSelect } from '../components/shared/AppSelect'
 import { cn } from '../lib/utils'
@@ -23,12 +24,6 @@ const ACTION_OPTIONS = [
   { value: 'login', labelKey: 'accessLog.actionLogin' },
   { value: 'logout', labelKey: 'accessLog.actionLogout' },
 ] as const
-
-function formatTs(ts: string): string {
-  if (!ts) return '—'
-  const d = new Date(ts)
-  return Number.isNaN(d.getTime()) ? ts : d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' })
-}
 
 function defaultDateRange(): { from: string; to: string } {
   const to = new Date()
@@ -158,6 +153,7 @@ export default function AccessLog() {
               <label className="text-xs text-muted-foreground">{t('audit.from')}</label>
               <input
                 type="date"
+                placeholder={t('common.datePlaceholder')}
                 className="min-h-[44px] w-full sm:min-w-[140px] rounded-md border border-input bg-background px-3 text-base md:text-sm date-input-mobile"
                 value={from}
                 onChange={(e) => setFrom(e.target.value)}
@@ -167,6 +163,7 @@ export default function AccessLog() {
               <label className="text-xs text-muted-foreground">{t('audit.to')}</label>
               <input
                 type="date"
+                placeholder={t('common.datePlaceholder')}
                 className="min-h-[44px] w-full sm:min-w-[140px] rounded-md border border-input bg-background px-3 text-base md:text-sm date-input-mobile"
                 value={to}
                 onChange={(e) => setTo(e.target.value)}
@@ -236,7 +233,7 @@ export default function AccessLog() {
             <p className="py-8 text-center text-muted-foreground">{t('accessLog.noResults')}</p>
           ) : (
             <>
-              <div className="overflow-x-auto -mx-2 table-wrap">
+              <div className="overflow-x-auto -mx-2 table-wrap table-wrapper">
                 <table className="w-full border-collapse text-sm min-w-[600px]">
                   <thead>
                     <tr className="border-b border-border">
@@ -251,7 +248,7 @@ export default function AccessLog() {
                   <tbody>
                     {entries.map((row) => (
                       <tr key={row.id} className="border-b border-border/70 hover:bg-muted/30">
-                        <td className="p-3 whitespace-nowrap">{formatTs(row.timestamp)}</td>
+                        <td className="p-3 whitespace-nowrap">{formatDateTime(row.timestamp)}</td>
                         <td className="p-3">{row.user_name ?? (row.user_id != null ? String(row.user_id) : '—')}</td>
                         <td className="p-3">
                           <span

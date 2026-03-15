@@ -19,6 +19,7 @@ import { canDeleteSupportTicket } from '../lib/permissions'
 import { AppSelect } from '../components/shared/AppSelect'
 import { EmptyState } from '../components/EmptyState'
 import { useTranslation } from '../context/LanguageContext'
+import { formatDate } from '../lib/dateFormat'
 
 export default function Support() {
   const { t } = useTranslation()
@@ -246,7 +247,7 @@ export default function Support() {
               className="py-12"
             />
           ) : (
-            <div className="rounded-xl border border-border overflow-hidden table-wrap">
+            <div className="rounded-xl border border-border overflow-hidden table-wrap table-wrapper">
               <table className="w-full text-sm min-w-[720px]">
                 <thead>
                   <tr className="bg-muted/40">
@@ -267,7 +268,7 @@ export default function Support() {
                       <td className="py-3 px-4 text-muted-foreground capitalize">{(ticket.status || '—').replace('_', ' ')}</td>
                       <td className="py-3 px-4 text-muted-foreground">{ticket.team ?? '—'}</td>
                       <td className="py-3 px-4 text-muted-foreground">
-                        {ticket.created_at ? new Date(ticket.created_at).toLocaleDateString() : '—'}
+                        {formatDate(ticket.created_at)}
                       </td>
                       <td className="py-3 px-4 text-muted-foreground">
                         {ticket.charger_id != null ? `${t('support.charger')} ${ticket.charger_id}` : '—'}
@@ -310,7 +311,7 @@ export default function Support() {
       </Card>
 
       {createOpen && createPortal(
-        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 min-h-[100dvh] min-h-[100vh] z-[100] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="create-ticket-title">
+        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 min-h-[100dvh] min-h-[100vh] z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm overflow-y-auto p-4" role="dialog" aria-modal="true" aria-labelledby="create-ticket-title">
           <div className="w-full max-w-2xl rounded-2xl border border-border bg-card shadow-lg relative max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex items-start justify-between gap-4 p-6 pb-0 flex-shrink-0 border-b border-border">
               <div>
@@ -432,7 +433,7 @@ export default function Support() {
       )}
 
       {editOpen && editingTicket && createPortal(
-        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 min-h-[100dvh] min-h-[100vh] z-[9999] flex items-center justify-center bg-black/50 p-4 backdrop-blur-[1px]" role="dialog" aria-modal="true" aria-labelledby="edit-ticket-title">
+        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 min-h-[100dvh] min-h-[100vh] z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm overflow-y-auto p-4" role="dialog" aria-modal="true" aria-labelledby="edit-ticket-title">
           <div className="w-full max-w-2xl rounded-2xl border border-border bg-card shadow-lg relative max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex items-start justify-between gap-4 p-6 pb-0 flex-shrink-0 border-b border-border">
               <div>

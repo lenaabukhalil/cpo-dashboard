@@ -191,8 +191,8 @@ export default function Sessions() {
                 </div>
                 <div className="rounded-lg border border-border bg-card p-4 flex items-start justify-between gap-2">
                   <div>
-                    <p className="text-sm text-muted-foreground">{t('monitor.onlineChargers')}</p>
-                    <p className="text-2xl font-bold mt-1 text-green-600">{statusStats.onlineChargers}</p>
+                    <p className="text-sm text-muted-foreground">{t('monitor.onlineChargersOnTotal')}</p>
+                    <p className="text-2xl font-bold mt-1 text-green-600">{statusStats.onlineChargers} / {statusStats.totalChargers}</p>
                   </div>
                   <CheckCircle className="h-8 w-8 shrink-0 text-green-600" />
                 </div>
@@ -205,15 +205,15 @@ export default function Sessions() {
                 </div>
                 <div className="rounded-lg border border-border bg-card p-4 flex items-start justify-between gap-2">
                   <div>
-                    <p className="text-sm text-muted-foreground">{t('monitor.offlineChargers')}</p>
-                    <p className="text-2xl font-bold mt-1 text-foreground">{statusStats.offlineChargers}</p>
+                    <p className="text-sm text-muted-foreground">{t('monitor.offlineChargersOnTotal')}</p>
+                    <p className="text-2xl font-bold mt-1 text-foreground">{statusStats.offlineChargers} / {statusStats.totalChargers}</p>
                   </div>
                   <Activity className="h-8 w-8 shrink-0 text-muted-foreground" />
                 </div>
                 <div className="rounded-lg border border-border bg-card p-4 flex items-start justify-between gap-2">
                   <div>
-                    <p className="text-sm text-muted-foreground">{t('monitor.unavailableConnector')}</p>
-                    <p className="text-2xl font-bold mt-1 text-red-600">{statusStats.unavailableConnector}</p>
+                    <p className="text-sm text-muted-foreground">{t('monitor.unavailableConnectorOnTotal')}</p>
+                    <p className="text-2xl font-bold mt-1 text-red-600">{statusStats.unavailableConnector} / {statusStats.totalConnectors}</p>
                   </div>
                   <AlertCircle className="h-8 w-8 shrink-0 text-red-600" />
                 </div>
@@ -267,7 +267,6 @@ export default function Sessions() {
                                       return (
                                         <div key={conn.id} className="flex items-center gap-2 flex-wrap rounded-lg border border-border bg-background px-3 py-2 text-sm">
                                           <Plug className="h-3.5 w-3.5 text-blue-500" />
-                                          <span className="font-mono font-medium">Connector {conn.id}</span>
                                           <span className="text-muted-foreground">{conn.connector_type ?? conn.type ?? '—'}</span>
                                           <StatusBadge status={liveStatus} />
                                           {conn.power != null && <span className="text-muted-foreground">{conn.power} {conn.power_unit ?? 'kW'}</span>}

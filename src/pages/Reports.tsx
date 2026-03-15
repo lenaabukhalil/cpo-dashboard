@@ -5,6 +5,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Download } from 'lucide-react'
 import {
+  exportSessionsReport,
   getSessionsReport,
   getChargerComparison,
   getConnectorComparison,
@@ -23,6 +24,7 @@ import { AppSelect } from '../components/shared/AppSelect'
 import { AppMultiSelect } from '../components/shared/AppMultiSelect'
 import { TablePagination } from '../components/TablePagination'
 import { useTranslation } from '../context/LanguageContext'
+import { formatDateTime } from '../lib/dateFormat'
 
 type TabId = 'sessions' | 'chargers' | 'connectors'
 
@@ -39,12 +41,6 @@ const PER_PAGE_DEFAULT = 10
 /** Default From/To for Sessions report (same as initial page load). Reused when clearing filters. */
 const DEFAULT_SESSION_FROM = ''
 const DEFAULT_SESSION_TO = ''
-
-function csvEscape(s: string | number | undefined): string {
-  const v = String(s ?? '')
-  if (/[",\n\r]/.test(v)) return `"${v.replace(/"/g, '""')}"`
-  return v
-}
 
 function daysBetween(start: string, end: string): number {
   const a = new Date(start).getTime()
@@ -409,7 +405,7 @@ export default function Reports() {
       .finally(() => setLoadingCompareConnector(false))
   }
 
-  const exportSessionsCsv = () => {
+  const exportSessionsExcel = () => {
     const f = from.trim()
     const toVal = to.trim()
     if (!f || !toVal) {
@@ -417,34 +413,16 @@ export default function Reports() {
       return
     }
     setExportLoading(true)
-    getSessionsReport(buildSessionsReportParams())
-      .then((r) => {
-        const data = (r as { data?: SessionsReportRow[] }).data ?? (r as unknown as { data?: SessionsReportRow[] }).data
-        const list = Array.isArray(data) ? data : []
-        const headers = ['Start Date/Time', 'Session ID', 'Location', 'Charger', 'Connector', 'Energy (KWH)', 'Amount (JOD)', 'mobile']
-        const rows = list.map((r) => {
-          const raw = r as Record<string, unknown>
-          const chargerDisplay = chargerIdToName.get(String(r.Charger ?? '').trim()) ?? (raw.Charger as string | number | undefined)
-          return [
-            csvEscape(raw['Start Date/Time'] as string | number | undefined),
-            csvEscape(raw['Session ID'] as string | number | undefined),
-            csvEscape(raw.Location as string | number | undefined),
-            csvEscape(chargerDisplay),
-            csvEscape(raw.Connector as string | number | undefined),
-            csvEscape(raw['Energy (KWH)'] as string | number | undefined),
-            csvEscape((raw['Amount (JOD)'] ?? raw['Amount (JOD) mobile']) as string | number | undefined),
-            csvEscape(raw.mobile as string | number | undefined),
-          ]
-        })
-        const csv = [headers.join(','), ...rows.map((row) => row.join(','))].join('\r\n')
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    exportSessionsReport(buildSessionsReportParams())
+      .then(({ blob, filename }) => {
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        a.download = `sessions-${f}-${t}.csv`
+        a.download = filename || `sessions-report-${f}-${toVal}.xlsx`
         a.click()
         URL.revokeObjectURL(url)
       })
+      .catch((err) => setSessionError(err?.message || 'Export failed'))
       .finally(() => setExportLoading(false))
   }
 
@@ -495,9 +473,9 @@ export default function Reports() {
           <CardHeader className="flex flex-row items-center justify-between gap-2">
             <CardTitle className="text-base">{t('reports.tab.sessions')}</CardTitle>
             {(from.trim() && to.trim()) && (
-              <Button type="button" variant="outline" size="sm" onClick={exportSessionsCsv} disabled={exportLoading} className="shrink-0 gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={exportSessionsExcel} disabled={exportLoading} className="shrink-0 gap-2">
                 <Download className="h-4 w-4" />
-                {exportLoading ? t('reports.loading') : t('reports.exportCsv')}
+                {exportLoading ? t('reports.loading') : t('reports.exportExcel')}
               </Button>
             )}
           </CardHeader>
@@ -506,11 +484,11 @@ export default function Reports() {
             <div className="flex flex-wrap items-end gap-4 mb-4 pb-4 border-b border-border">
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">{t('reports.from')}</Label>
-                <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-full min-w-[140px] sm:w-40" />
+                <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} placeholder={t('common.datePlaceholder')} className="w-full min-w-[140px] sm:w-40" />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">{t('reports.to')}</Label>
-                <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-full min-w-[140px] sm:w-40" />
+                <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} placeholder={t('common.datePlaceholder')} className="w-full min-w-[140px] sm:w-40" />
               </div>
               <div className="space-y-1.5 min-w-[180px]">
                 <Label className="text-xs text-muted-foreground">{t('list.location')}</Label>
@@ -573,7 +551,7 @@ export default function Reports() {
                 <p className="text-xs text-muted-foreground mb-2">
                   Showing {sessionsList.length} session{sessionsList.length !== 1 ? 's' : ''}
                 </p>
-                <div className="overflow-x-auto table-wrap">
+                <div className="overflow-x-auto table-wrap table-wrapper">
                   <table className="w-full text-sm min-w-[600px]">
                     <thead>
                       <tr className="border-b border-border">
@@ -590,7 +568,7 @@ export default function Reports() {
                     <tbody>
                       {paginatedSessions.map((r, i) => (
                         <tr key={i} className="border-b border-border/50">
-                          <td className="py-2">{String(r['Start Date/Time'] ?? '—')}</td>
+                          <td className="py-2">{formatDateTime(r['Start Date/Time'])}</td>
                           <td className="py-2">{String(r['Session ID'] ?? '—')}</td>
                           <td className="py-2">{String(r.Location ?? '—')}</td>
                           <td className="py-2">{chargerIdToName.get(String(r.Charger ?? '').trim()) ?? r.Charger ?? '—'}</td>
@@ -645,11 +623,11 @@ export default function Reports() {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">{t('reports.startDate')}</Label>
-                      <Input type="date" value={startA} onChange={(e) => setStartA(e.target.value)} className="w-full bg-background" />
+                      <Input type="date" value={startA} onChange={(e) => setStartA(e.target.value)} placeholder={t('common.datePlaceholder')} className="w-full bg-background" />
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">{t('reports.endDate')}</Label>
-                      <Input type="date" value={endA} onChange={(e) => setEndA(e.target.value)} className="w-full bg-background" />
+                      <Input type="date" value={endA} onChange={(e) => setEndA(e.target.value)} placeholder={t('common.datePlaceholder')} className="w-full bg-background" />
                     </div>
                   </div>
                 </div>
@@ -670,11 +648,11 @@ export default function Reports() {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">{t('reports.startDate')}</Label>
-                      <Input type="date" value={startB} onChange={(e) => setStartB(e.target.value)} className="w-full bg-background" />
+                      <Input type="date" value={startB} onChange={(e) => setStartB(e.target.value)} placeholder={t('common.datePlaceholder')} className="w-full bg-background" />
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">{t('reports.endDate')}</Label>
-                      <Input type="date" value={endB} onChange={(e) => setEndB(e.target.value)} className="w-full bg-background" />
+                      <Input type="date" value={endB} onChange={(e) => setEndB(e.target.value)} placeholder={t('common.datePlaceholder')} className="w-full bg-background" />
                     </div>
                   </div>
                 </div>
@@ -798,11 +776,11 @@ export default function Reports() {
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">{t('reports.startDate')}</Label>
-                        <Input type="date" value={connectorStartA} onChange={(e) => setConnectorStartA(e.target.value)} className="w-full bg-background" />
+                        <Input type="date" value={connectorStartA} onChange={(e) => setConnectorStartA(e.target.value)} placeholder={t('common.datePlaceholder')} className="w-full bg-background" />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">{t('reports.endDate')}</Label>
-                        <Input type="date" value={connectorEndA} onChange={(e) => setConnectorEndA(e.target.value)} className="w-full bg-background" />
+                        <Input type="date" value={connectorEndA} onChange={(e) => setConnectorEndA(e.target.value)} placeholder={t('common.datePlaceholder')} className="w-full bg-background" />
                       </div>
                     </div>
                   </div>
@@ -827,11 +805,11 @@ export default function Reports() {
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">{t('reports.startDate')}</Label>
-                        <Input type="date" value={connectorStartB} onChange={(e) => setConnectorStartB(e.target.value)} className="w-full bg-background" />
+                        <Input type="date" value={connectorStartB} onChange={(e) => setConnectorStartB(e.target.value)} placeholder={t('common.datePlaceholder')} className="w-full bg-background" />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">{t('reports.endDate')}</Label>
-                        <Input type="date" value={connectorEndB} onChange={(e) => setConnectorEndB(e.target.value)} className="w-full bg-background" />
+                        <Input type="date" value={connectorEndB} onChange={(e) => setConnectorEndB(e.target.value)} placeholder={t('common.datePlaceholder')} className="w-full bg-background" />
                       </div>
                     </div>
                   </div>

@@ -3,7 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
-import { Download, Filter, RefreshCw } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { Download, Filter, RefreshCw, X } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from '../context/LanguageContext'
 import { canAccessAuditLog, canAccessAuditLogFull } from '../lib/permissions'
@@ -17,7 +18,8 @@ import {
   type AccessLogEntry,
   type AccessLogFilters,
 } from '../services/api'
-import { getAuditLogSummary, getAccessLogSummary } from '../lib/auditLogSummary'
+import { getAuditLogSummary, getAccessLogSummary, getAuditLogDetailSections } from '../lib/auditLogSummary'
+import { formatDateTime, type DateInput } from '../lib/dateFormat'
 import { TablePagination } from '../components/TablePagination'
 import { AppSelect } from '../components/shared/AppSelect'
 import { PageTabs } from '../components/PageTabs'
@@ -36,6 +38,7 @@ const AUDIT_ACTION_OPTIONS = [
   { value: 'create', labelKey: 'audit.actionCreate' },
   { value: 'update', labelKey: 'audit.actionUpdate' },
   { value: 'delete', labelKey: 'audit.actionDelete' },
+  { value: 'notification', labelKey: 'audit.actionNotification' },
 ] as const
 
 const ACCESS_ACTION_OPTIONS = [
@@ -51,12 +54,6 @@ const ACCESS_ACTION_OPTIONS = [
 ] as const
 
 type TabId = 'audit' | 'access'
-
-function formatTs(ts: string): string {
-  if (!ts) return '—'
-  const d = new Date(ts)
-  return Number.isNaN(d.getTime()) ? ts : d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' })
-}
 
 function actionLabelAccess(action: string, t: (k: string) => string): string {
   const map: Record<string, string> = {
@@ -113,13 +110,17 @@ export default function AuditLog() {
   const [accessFilterVersion, setAccessFilterVersion] = useState(0)
   /** When API returns 500 or success: false, show this instead of generic "no results". */
   const [auditError, setAuditError] = useState<string | null>(null)
+  /** True when user clicked "Latest 10": show only 10 total (no pagination beyond that). */
+  const [isLatest10, setIsLatest10] = useState(false)
+  /** Row selected for "More details" modal (Audit tab only). */
+  const [selectedAuditRow, setSelectedAuditRow] = useState<AuditLogEntry | null>(null)
 
   const loadAudit = useCallback(() => {
     if (!canAccess) return
     setLoading(true)
     setAuditError(null)
     const filters: AuditLogFilters = { from, to, limit: perPage, offset: (page - 1) * perPage }
-    if (action) filters.action = action as 'create' | 'update' | 'delete'
+    if (action) filters.action = action as 'create' | 'update' | 'delete' | 'notification'
     if (entityType) filters.entity_type = entityType
     if (user?.organization_id != null && !canAccessAuditLogFull(user?.role_name)) filters.organization_id = user.organization_id
     getAuditLogs(filters)
@@ -134,7 +135,7 @@ export default function AuditLog() {
         const r = res as { data?: AuditLogEntry[]; total?: number }
         const list = Array.isArray(r.data) ? r.data : []
         setEntries(list)
-        setTotal(typeof r.total === 'number' ? r.total : list.length)
+        setTotal(isLatest10 ? list.length : (typeof r.total === 'number' ? r.total : list.length))
       })
       .catch((e) => {
         setEntries([])
@@ -142,7 +143,7 @@ export default function AuditLog() {
         setAuditError(e instanceof Error ? e.message : 'Request failed.')
       })
       .finally(() => setLoading(false))
-  }, [canAccess, from, to, action, entityType, page, perPage, user?.organization_id])
+  }, [canAccess, from, to, action, entityType, page, perPage, isLatest10, user?.organization_id])
 
   const loadAccess = useCallback(() => {
     if (!canAccess) return
@@ -249,7 +250,7 @@ export default function AuditLog() {
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <CardTitle className="flex items-center gap-2"><Filter className="h-5 w-5" />{t('audit.filters')}</CardTitle>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={() => { setFrom(defaultFrom); setTo(defaultTo); setAction(''); setEntityType(''); setPage(1); setHasAppliedAudit(false); setEntries([]); setTotal(0) }}>
+                  <Button variant="outline" size="sm" onClick={() => { setFrom(defaultFrom); setTo(defaultTo); setAction(''); setEntityType(''); setPage(1); setIsLatest10(false); setHasAppliedAudit(false); setEntries([]); setTotal(0) }}>
                     {t('audit.clearFilters')}
                   </Button>
                 </div>
@@ -257,12 +258,31 @@ export default function AuditLog() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="space-y-2"><Label>{t('audit.from')}</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
-                <div className="space-y-2"><Label>{t('audit.to')}</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
+                <div className="space-y-2"><Label>{t('audit.from')}</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} placeholder={t('common.datePlaceholder')} /></div>
+                <div className="space-y-2"><Label>{t('audit.to')}</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} placeholder={t('common.datePlaceholder')} /></div>
                 <div className="space-y-2"><Label>{t('audit.action')}</Label><AppSelect options={actionOptions} value={action} onChange={setAction} size="default" className="w-full" /></div>
                 <div className="space-y-2"><Label>{t('audit.entityType')}</Label><AppSelect options={entityTypeOptions} value={entityType} onChange={setEntityType} size="default" className="w-full" /></div>
               </div>
-              <Button onClick={() => { setPage(1); setHasAppliedAudit(true); setAuditFilterVersion((v) => v + 1); }} disabled={!from.trim() || !to.trim()}>{t('audit.applyFilters')}</Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button onClick={() => { setIsLatest10(false); setPage(1); setHasAppliedAudit(true); setAuditFilterVersion((v) => v + 1); }} disabled={!from.trim() || !to.trim()}>{t('audit.applyFilters')}</Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setFrom('')
+                    setTo('')
+                    setAction('')
+                    setEntityType('')
+                    setPage(1)
+                    setPerPage(10)
+                    setIsLatest10(true)
+                    setHasAppliedAudit(true)
+                    setAuditFilterVersion((v) => v + 1)
+                  }}
+                  disabled={loading}
+                >
+                  {t('audit.latest10')}
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
@@ -288,7 +308,7 @@ export default function AuditLog() {
                 </p>
               ) : (
                 <>
-                  <div className="overflow-x-auto -mx-2 table-wrap">
+                  <div className="overflow-x-auto -mx-2 table-wrap table-wrapper">
                     <table className="w-full border-collapse text-sm min-w-[600px]">
                       <thead>
                         <tr className="border-b border-border">
@@ -302,12 +322,16 @@ export default function AuditLog() {
                       </thead>
                       <tbody>
                         {entries.map((row) => (
-                          <tr key={row.id} className="border-b border-border/70 hover:bg-muted/30">
-                            <td className="p-3 whitespace-nowrap">{formatTs(row.timestamp)}</td>
+                          <tr
+                            key={row.id}
+                            className="border-b border-border/70 hover:bg-muted/30 cursor-pointer"
+                            onClick={() => setSelectedAuditRow(row)}
+                          >
+                            <td className="p-3 whitespace-nowrap">{formatDateTime(row.timestamp)}</td>
                             <td className="p-3">{row.user_name ?? (row.user_id != null ? String(row.user_id) : '—')}</td>
                             <td className="p-3">
-                              <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', row.action === 'create' && 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300', row.action === 'update' && 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300', row.action === 'delete' && 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300')}>
-                                {row.action === 'create' && t('audit.actionCreate')}{row.action === 'update' && t('audit.actionUpdate')}{row.action === 'delete' && t('audit.actionDelete')}{!['create', 'update', 'delete'].includes(row.action) && row.action}
+                              <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', row.action === 'create' && 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300', row.action === 'update' && 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300', row.action === 'delete' && 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300', row.action === 'notification' && 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300')}>
+                                {row.action === 'create' && t('audit.actionCreate')}{row.action === 'update' && t('audit.actionUpdate')}{row.action === 'delete' && t('audit.actionDelete')}{row.action === 'notification' && t('audit.actionNotification')}{!['create', 'update', 'delete', 'notification'].includes(row.action) && row.action}
                               </span>
                             </td>
                             <td className="p-3">{row.entity_type}</td>
@@ -320,7 +344,7 @@ export default function AuditLog() {
                       </tbody>
                     </table>
                   </div>
-                  <TablePagination total={total} page={page} perPage={perPage} onPageChange={setPage} onPerPageChange={(n) => { setPerPage(n); setPage(1); }} pageSizeOptions={PAGE_SIZES} />
+                  <TablePagination total={total} page={page} perPage={perPage} onPageChange={(p) => { setIsLatest10(false); setPage(p); }} onPerPageChange={(n) => { setPerPage(n); setPage(1); setIsLatest10(false); }} pageSizeOptions={PAGE_SIZES} />
                 </>
               )}
             </CardContent>
@@ -341,8 +365,8 @@ export default function AuditLog() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="space-y-2"><Label>{t('audit.from')}</Label><Input type="date" value={accFrom} onChange={(e) => setAccFrom(e.target.value)} /></div>
-                <div className="space-y-2"><Label>{t('audit.to')}</Label><Input type="date" value={accTo} onChange={(e) => setAccTo(e.target.value)} /></div>
+                <div className="space-y-2"><Label>{t('audit.from')}</Label><Input type="date" value={accFrom} onChange={(e) => setAccFrom(e.target.value)} placeholder={t('common.datePlaceholder')} /></div>
+                <div className="space-y-2"><Label>{t('audit.to')}</Label><Input type="date" value={accTo} onChange={(e) => setAccTo(e.target.value)} placeholder={t('common.datePlaceholder')} /></div>
                 <div className="space-y-2"><Label>{t('audit.action')}</Label><AppSelect options={accActionOptions} value={accAction} onChange={setAccAction} size="default" className="w-full" /></div>
               </div>
               <Button onClick={() => { setAccPage(1); setHasAppliedAccess(true); setAccessFilterVersion((v) => v + 1); }} disabled={!accFrom.trim() || !accTo.trim()}>{t('audit.applyFilters')}</Button>
@@ -368,7 +392,7 @@ export default function AuditLog() {
                 <p className="py-8 text-center text-muted-foreground">{t('accessLog.noResults')}</p>
               ) : (
                 <>
-                  <div className="overflow-x-auto -mx-2 table-wrap">
+                  <div className="overflow-x-auto -mx-2 table-wrap table-wrapper">
                     <table className="w-full border-collapse text-sm min-w-[600px]">
                       <thead>
                         <tr className="border-b border-border">
@@ -383,7 +407,7 @@ export default function AuditLog() {
                       <tbody>
                         {accEntries.map((row) => (
                           <tr key={row.id} className="border-b border-border/70 hover:bg-muted/30">
-                            <td className="p-3 whitespace-nowrap">{formatTs(row.timestamp)}</td>
+                            <td className="p-3 whitespace-nowrap">{formatDateTime(row.timestamp)}</td>
                             <td className="p-3">{row.user_name ?? (row.user_id != null ? String(row.user_id) : '—')}</td>
                             <td className="p-3">
                               <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', row.action === 'login' && 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300', row.action === 'logout' && 'bg-slate-100 text-slate-700 dark:bg-slate-800/50 dark:text-slate-300', row.action === 'failed_login' && 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300', row.action === 'password_reset' && 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300', row.action === 'token_refresh' && 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300', row.action === 'session_expired' && 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300', !['login', 'logout', 'failed_login', 'password_reset', 'token_refresh', 'session_expired', 'mfa_login', 'mfa_failed'].includes(row.action) && 'bg-muted text-muted-foreground')}>
@@ -407,6 +431,96 @@ export default function AuditLog() {
           </Card>
         </>
       )}
+
+      {selectedAuditRow &&
+        createPortal(
+          <div
+            className="fixed inset-0 top-0 left-0 right-0 bottom-0 min-h-[100dvh] min-h-[100vh] z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto"
+            onClick={() => setSelectedAuditRow(null)}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="audit-details-title"
+          >
+            <div
+              className="bg-card border border-border rounded-xl shadow-lg max-w-lg w-full max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between gap-2 p-4 border-b border-border">
+                <h2 id="audit-details-title" className="text-lg font-semibold text-foreground">
+                  {t('audit.moreDetails')}
+                </h2>
+                <Button variant="ghost" size="icon" onClick={() => setSelectedAuditRow(null)} aria-label={t('audit.detailsModal.close')}>
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+              <div className="p-4 space-y-4">
+                {(() => {
+                  const s = getAuditLogDetailSections(selectedAuditRow, t, (value: unknown) => formatDateTime(value as DateInput))
+                  return (
+                    <>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                        <div><span className="font-medium text-muted-foreground">{t('audit.detailsModal.when')}</span><p className="mt-0.5 text-foreground">{s.when}</p></div>
+                        {selectedAuditRow.action !== 'notification' && (
+                          <div><span className="font-medium text-muted-foreground">{t('audit.detailsModal.who')}</span><p className="mt-0.5 text-foreground">{s.who}</p></div>
+                        )}
+                        <div><span className="font-medium text-muted-foreground">{t('audit.detailsModal.action')}</span><p className="mt-0.5 text-foreground">{s.action}</p></div>
+                        <div><span className="font-medium text-muted-foreground">{t('audit.detailsModal.where')}</span><p className="mt-0.5 text-foreground font-mono text-xs break-all">{s.where}</p></div>
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-medium text-muted-foreground mb-2">{t('audit.detailsModal.whatChanged')}</h3>
+                        {s.changeSummary === 'changes' && s.changes && s.changes.length > 0 && (
+                          <ul className="space-y-2 text-sm">
+                            {s.changes.map((c, i) => (
+                              <li key={i} className="flex flex-wrap gap-x-2 items-baseline border-b border-border/50 pb-2 last:border-0">
+                                <span className="font-medium text-foreground shrink-0">{c.fieldLabel}:</span>
+                                <span className="text-muted-foreground">{t('audit.detailsModal.previousValue')} </span>
+                                <span className="line-through text-muted-foreground">{c.oldVal}</span>
+                                <span className="text-muted-foreground">→</span>
+                                <span className="text-foreground">{c.newVal}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        {s.changeSummary === 'created' && s.createdFields && s.createdFields.length > 0 && (
+                          <ul className="space-y-2 text-sm">
+                            {s.createdFields.map((f, i) => (
+                              <li key={i} className="flex flex-wrap gap-x-2 border-b border-border/50 pb-2 last:border-0">
+                                <span className="font-medium text-foreground shrink-0">{f.fieldLabel}:</span>
+                                <span className="text-foreground break-all">{f.value}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        {s.changeSummary === 'deleted' && s.deletedText && (
+                          <p className="text-sm text-foreground">{s.deletedText}</p>
+                        )}
+                        {s.changeSummary === 'notification' && s.notificationFields && s.notificationFields.length > 0 && (
+                          <ul className="space-y-2 text-sm">
+                            {s.notificationFields.map((f, i) => (
+                              <li key={i} className="flex flex-wrap gap-x-2 border-b border-border/50 pb-2 last:border-0">
+                                <span className="font-medium text-foreground shrink-0">{f.fieldLabel}:</span>
+                                <span className="text-foreground break-all">{f.value}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        {(s.changeSummary === 'changes' && (!s.changes || s.changes.length === 0)) && (
+                          <p className="text-sm text-muted-foreground">{t('audit.summary.updatedEntity').replace('{entity}', (selectedAuditRow.entity_type || 'record').replace(/_/g, ' '))}</p>
+                        )}
+                      </div>
+                    </>
+                  )
+                })()}
+              </div>
+              <div className="p-4 border-t border-border">
+                <Button variant="outline" className="w-full sm:w-auto" onClick={() => setSelectedAuditRow(null)}>
+                  {t('audit.detailsModal.close')}
+                </Button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
     </div>
   )

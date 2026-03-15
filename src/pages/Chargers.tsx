@@ -18,6 +18,7 @@ import { EntityFormActions } from '../components/EntityFormActions'
 import { AppSelect } from '../components/shared/AppSelect'
 import { PageTabs } from '../components/PageTabs'
 import { cn } from '../lib/utils'
+import { formatDateTime } from '../lib/dateFormat'
 
 const CHARGER_TABS = [
   { id: 'status', label: 'Status' },
@@ -37,24 +38,12 @@ type PageTab = 'status' | 'chargers'
 const inputSelectClass =
   'flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50'
 
-/** Format charger time as MM/DD/YYYY, HH:MM:SS AM/PM. Tries common API field names. */
-function formatChargerTime(c: ChargerType): string {
+function getChargerTimeRaw(c: ChargerType): string | number | null | undefined {
   const rec = c as unknown as Record<string, unknown>
   const raw =
     rec.last_updated ?? rec.updated_at ?? rec.last_seen ?? rec.last_heartbeat ??
     rec.timestamp ?? rec.created_at ?? rec.time
-  if (raw == null || raw === '') return '—'
-  const d = new Date(typeof raw === 'string' ? raw : Number(raw) * (Number(raw) > 1e12 ? 1 : 1000))
-  if (Number.isNaN(d.getTime())) return '—'
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const yyyy = d.getFullYear()
-  const h = d.getHours()
-  const m = String(d.getMinutes()).padStart(2, '0')
-  const s = String(d.getSeconds()).padStart(2, '0')
-  const ampm = h >= 12 ? 'PM' : 'AM'
-  const h12 = h % 12 || 12
-  return `${mm}/${dd}/${yyyy}, ${h12}:${m}:${s} ${ampm}`
+  return raw as string | number | null | undefined
 }
 
 export default function Chargers() {
@@ -272,7 +261,7 @@ export default function Chargers() {
                   onChange={(e) => setStatusOnlineSearch(e.target.value)}
                 />
               </div>
-              <div className="overflow-x-auto table-wrap">
+              <div className="overflow-x-auto table-wrap table-wrapper">
                 <table className="w-full text-sm min-w-[560px]">
                   <thead>
                     <tr className="border-b border-border text-muted-foreground text-left">
@@ -291,7 +280,7 @@ export default function Chargers() {
                         <tr key={c.id} className="border-b border-border/50">
                           <td className="py-2 pr-2 font-medium">{c.name}</td>
                           <td className="py-2 pr-2 text-muted-foreground">{c.chargerID ?? c.id}</td>
-                          <td className="py-2 text-muted-foreground">{formatChargerTime(c)}</td>
+                          <td className="py-2 text-muted-foreground">{formatDateTime(getChargerTimeRaw(c))}</td>
                         </tr>
                       ))
                     )}
@@ -314,7 +303,7 @@ export default function Chargers() {
                   onChange={(e) => setStatusOfflineSearch(e.target.value)}
                 />
               </div>
-              <div className="overflow-x-auto table-wrap">
+              <div className="overflow-x-auto table-wrap table-wrapper">
                 <table className="w-full text-sm min-w-[560px]">
                   <thead>
                     <tr className="border-b border-border text-muted-foreground text-left">
@@ -333,7 +322,7 @@ export default function Chargers() {
                         <tr key={c.id} className="border-b border-border/50">
                           <td className="py-2 pr-2 font-medium">{c.name}</td>
                           <td className="py-2 pr-2 text-muted-foreground">{c.chargerID ?? c.id}</td>
-                          <td className="py-2 text-muted-foreground">{formatChargerTime(c)}</td>
+                          <td className="py-2 text-muted-foreground">{formatDateTime(getChargerTimeRaw(c))}</td>
                         </tr>
                       ))
                     )}

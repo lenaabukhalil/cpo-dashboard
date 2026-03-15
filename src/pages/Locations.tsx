@@ -290,7 +290,7 @@ export default function Locations() {
                 <EmptyState title="No Locations" description="No locations found." />
               ) : (
                 <>
-                  <div className="overflow-x-auto border rounded-lg border-border table-wrap">
+                  <div className="overflow-x-auto border rounded-lg border-border table-wrap table-wrapper">
                     <table className="w-full text-sm min-w-[560px]">
                       <thead>
                         <tr className="bg-muted/30">

@@ -262,7 +262,7 @@ export default function Dashboard() {
             ) : activeSessionsList.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4">{t('dashboard.noActiveSessions')}</p>
             ) : (
-              <div className="overflow-x-auto table-wrap">
+              <div className="overflow-x-auto table-wrap table-wrapper">
                 <table className="w-full text-sm min-w-[560px]">
                   <thead>
                     <tr className="border-b border-border">

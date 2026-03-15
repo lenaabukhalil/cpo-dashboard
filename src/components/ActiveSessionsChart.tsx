@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { formatTime, formatDateTime } from '../lib/dateFormat'
 
 export interface ActiveSessionsChartPoint {
   ts: number
@@ -11,19 +12,16 @@ const HEIGHT = 180
 const Y_TICKS = 5
 const X_TICK_COUNT = 8
 
-function formatTime(tsMs: number): string {
-  const d = new Date(tsMs)
-  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })
+function formatAxisTime(tsMs: number): string {
+  return formatTime(tsMs)
 }
 
 function formatTooltipTime(tsMs: number): string {
-  const d = new Date(tsMs)
-  return d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })
+  return formatDateTime(tsMs)
 }
 
 function formatUpdated(at: Date | string): string {
-  const d = typeof at === 'string' ? new Date(at) : at
-  return d.toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return formatTime(at)
 }
 
 export interface ActiveSessionsChartProps {
@@ -145,7 +143,7 @@ export function ActiveSessionsChart({ title = 'Active Sessions', points, updated
                   const x = PADDING.left + (idx / (points.length - 1 || 1)) * innerW
                   return (
                     <text key={i} x={x} y={HEIGHT - 6} textAnchor="middle">
-                      {formatTime(p.ts)}
+                      {formatAxisTime(p.ts)}
                     </text>
                   )
                 })}

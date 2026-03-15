@@ -179,6 +179,36 @@
     margin-bottom: 0.5rem;
   }
 
+  /* Table wrapper: full-width horizontal scroll, no column collapse */
+  .table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    position: relative;
+    border-radius: var(--radius);
+  }
+  .table-wrapper th,
+  .table-wrapper td {
+    white-space: nowrap;
+  }
+  /* Fade gradient on right edge to signal horizontal scroll on mobile */
+  .table-wrapper::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 20px;
+    background: linear-gradient(to left, hsl(var(--background)), transparent);
+    pointer-events: none;
+    opacity: 0.85;
+  }
+  [dir='rtl'] .table-wrapper::after {
+    right: auto;
+    left: 0;
+    background: linear-gradient(to right, hsl(var(--background)), transparent);
+  }
+
   /* Mobile: 16px on all form controls to prevent iOS Safari zoom on focus */
   @media (max-width: 768px) {
     input,

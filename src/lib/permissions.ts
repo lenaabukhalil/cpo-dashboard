@@ -60,8 +60,8 @@ const OPERATOR_PATHS = [
 const ENGINEER_PATHS = ['/', '/map', '/org', '/details', '/list', '/sessions', '/support']
 /** Manager: same as Engineer – Dashboard, Map, Org, Details, List, Monitor, Support. */
 const MANAGER_PATHS = ['/', '/map', '/org', '/details', '/list', '/sessions', '/support']
-/** Accountant: Dashboard, Organization, List. No D. Reports (Reports, Predictive AI, Audit Log), Map, Users, Monitor, Maintenance, Settings. */
-const ACCOUNTANT_PATHS = ['/', '/org', '/list']
+/** Accountant: Dashboard, Organization, List, D. Reports (Reports & Analytics). No Predictive AI, Map, Users, Monitor, Maintenance, Settings. */
+const ACCOUNTANT_PATHS = ['/', '/org', '/list', '/reports']
 
 export function canAccessPath(roleName: string | undefined, path: string): boolean {
   const role = normalizeRole(roleName)
@@ -132,12 +132,13 @@ function managerNav(): NavItem[] {
   ]
 }
 
-/** Accountant: Dashboard (A), Organization + List (B). No D. Reports (Reports, Predictive AI, Audit Log). */
+/** Accountant: Dashboard (A), Organization + List (B), D. Reports (Reports & Analytics). */
 function accountantNav(): NavItem[] {
   return [
     { to: '/', label: 'Dashboard', labelKey: 'nav.dashboard', icon: Home, group: 'A. Monitor', groupKey: 'group.monitor' },
     { to: '/org', label: 'Organization', labelKey: 'nav.organization', icon: Building2, group: 'B. Organizations', groupKey: 'group.organizations' },
     { to: '/list', label: 'List of Location, Charger, Connector, Tariffs', labelKey: 'nav.list', icon: Table, group: 'B. Organizations', groupKey: 'group.organizations' },
+    { to: '/reports', label: 'Reports & Analytics', labelKey: 'nav.reports', icon: FileText, group: 'D. Reports', groupKey: 'group.reports' },
   ]
 }
 

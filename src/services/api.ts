@@ -654,6 +654,29 @@ export async function getSessionsReport(params: SessionsReportParams) {
   return request<{ success?: boolean; count: number; data: SessionsReportRow[] }>(`${CPO_API}/sessions-report`, { params: query })
 }
 
+/** Export sessions report as XLSX (backend-generated; avoids WPS/Excel re-parsing issues). */
+export async function exportSessionsReport(params: SessionsReportParams): Promise<{ blob: Blob; filename?: string }> {
+  const query: Record<string, string> = { from: params.from, to: params.to }
+  if (params.locationIds != null && String(params.locationIds).trim() !== '') query.locationIds = String(params.locationIds).trim()
+  if (params.chargerIds != null && String(params.chargerIds).trim() !== '') query.chargerIds = String(params.chargerIds).trim()
+  if (params.connectorIds != null && String(params.connectorIds).trim() !== '') query.connectorIds = String(params.connectorIds).trim()
+  if (params.energyMin != null && String(params.energyMin).trim() !== '') query.energyMin = String(params.energyMin).trim()
+  if (params.energyMax != null && String(params.energyMax).trim() !== '') query.energyMax = String(params.energyMax).trim()
+  const qs = new URLSearchParams(query).toString()
+  const token = getToken()
+  const url = `${BASE}${CPO_API}/sessions-report/export?${qs}`
+  const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  if (!res.ok) throw new Error(res.statusText)
+  const blob = await res.blob()
+  let filename: string | undefined
+  const disp = res.headers.get('Content-Disposition')
+  if (disp) {
+    const m = disp.match(/filename="?([^";\n]+)"?/i)
+    if (m) filename = m[1].trim()
+  }
+  return { blob, filename }
+}
+
 export interface SessionsReportRow {
   'Start Date/Time'?: string
   'Session ID'?: string
@@ -813,7 +836,7 @@ export interface AuditLogEntry {
   timestamp: string
   user_id: number | null
   organization_id: number | null
-  action: 'create' | 'update' | 'delete'
+  action: 'create' | 'update' | 'delete' | 'notification'
   entity_type: string
   entity_id: string | null
   old_value: Record<string, unknown> | null
@@ -827,7 +850,7 @@ export interface AuditLogEntry {
 export interface AuditLogFilters {
   from?: string
   to?: string
-  action?: 'create' | 'update' | 'delete'
+  action?: 'create' | 'update' | 'delete' | 'notification'
   entity_type?: string
   user_id?: number
   organization_id?: number

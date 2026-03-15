@@ -13,8 +13,10 @@ import {
   type PeriodicMaintenance,
 } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
+import { useTranslation } from '../../context/LanguageContext'
 import { AppSelect } from '../../components/shared/AppSelect'
 import { EmptyState } from '../../components/EmptyState'
+import { formatDate } from '../../lib/dateFormat'
 import { Calendar, Plus, Trash2, Wrench, X } from 'lucide-react'
 
 const PRIORITY_OPTIONS = [
@@ -34,13 +36,8 @@ const SCOPE_OPTIONS = [
   { value: 'connector', label: 'Connector' },
 ]
 
-function formatDate(s: string | null | undefined) {
-  if (!s) return '—'
-  const d = new Date(s)
-  return isNaN(d.getTime()) ? s : d.toLocaleDateString(undefined, { dateStyle: 'short' })
-}
-
 export default function SupportMaintenance() {
+  const { t } = useTranslation()
   const { user } = useAuth()
   const [list, setList] = useState<PeriodicMaintenance[]>([])
   const [loading, setLoading] = useState(true)
@@ -254,7 +251,7 @@ export default function SupportMaintenance() {
               onAction={openCreate}
             />
           ) : (
-            <div className="rounded-xl border border-border overflow-hidden table-wrap">
+            <div className="rounded-xl border border-border overflow-hidden table-wrap table-wrapper">
               <table className="w-full text-sm min-w-[640px]">
                 <thead>
                   <tr className="bg-muted/40">
@@ -411,6 +408,7 @@ export default function SupportMaintenance() {
                   <Input
                     id="pm-next"
                     type="date"
+                    placeholder={t('common.datePlaceholder')}
                     value={form.next_due_at}
                     onChange={(e) => setForm((f) => ({ ...f, next_due_at: e.target.value }))}
                   />

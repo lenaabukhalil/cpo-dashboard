@@ -223,7 +223,7 @@ export default function PartnerUsers() {
       {/* Add user modal – rendered in body to cover full viewport and avoid white strip */}
       {addOpen && createPortal(
         <div
-          className="fixed inset-0 top-0 left-0 right-0 bottom-0 min-h-[100dvh] min-h-[100vh] z-[100] flex items-center justify-center p-4 bg-black/50"
+          className="fixed inset-0 top-0 left-0 right-0 bottom-0 min-h-[100dvh] min-h-[100vh] z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto"
           onClick={() => !submitting && setAddOpen(false)}
           role="dialog"
           aria-modal="true"
@@ -338,7 +338,7 @@ export default function PartnerUsers() {
 
       {editOpen && editingUser && createPortal(
         <div
-          className="fixed inset-0 top-0 left-0 right-0 bottom-0 min-h-[100dvh] min-h-[100vh] z-[100] flex items-center justify-center p-4 bg-black/50"
+          className="fixed inset-0 top-0 left-0 right-0 bottom-0 min-h-[100dvh] min-h-[100vh] z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto"
           onClick={() => !submitting && (setEditOpen(false), setEditingUser(null))}
           role="dialog"
           aria-modal="true"
@@ -477,7 +477,7 @@ export default function PartnerUsers() {
           ) : list.length === 0 ? (
             <p className="text-sm text-muted-foreground py-6 text-center">No users found for this organization.</p>
           ) : (
-            <div className="rounded-xl border border-border overflow-hidden table-wrap">
+            <div className="rounded-xl border border-border overflow-hidden table-wrap table-wrapper">
               <table className="w-full text-sm border-collapse min-w-[640px]">
                 <thead>
                   <tr className="bg-muted/40 border-b border-border">

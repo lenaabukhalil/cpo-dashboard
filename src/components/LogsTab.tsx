@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext'
 import { useTranslation } from '../context/LanguageContext'
 import { getNotifications, getSessionsReport, type NotificationItem, type SessionsReportRow } from '../services/api'
 import { cn } from '../lib/utils'
+import { formatDateTime } from '../lib/dateFormat'
 
 type LogType = 'session' | 'system'
 
@@ -17,13 +18,6 @@ interface LogEntry {
   type: LogType
   message: string
   details: string
-}
-
-function formatLogTime(d: Date): string {
-  return d.toLocaleString(undefined, {
-    dateStyle: 'short',
-    timeStyle: 'medium',
-  })
 }
 
 function getSevenDaysRange(): { from: string; to: string } {
@@ -149,11 +143,11 @@ export default function LogsTab() {
           <div className="flex flex-wrap items-end gap-3 ms-auto">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">{t('reports.from')}</Label>
-              <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-full min-w-[140px] sm:w-40" />
+              <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} placeholder={t('common.datePlaceholder')} className="w-full min-w-[140px] sm:w-40" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">{t('reports.to')}</Label>
-              <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-full min-w-[140px] sm:w-40" />
+              <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} placeholder={t('common.datePlaceholder')} className="w-full min-w-[140px] sm:w-40" />
             </div>
             <Button type="button" onClick={loadLogs} disabled={loading || !from || !to} className="gap-2">
               <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
@@ -163,7 +157,7 @@ export default function LogsTab() {
         </div>
 
         <div className="rounded-lg border border-border overflow-hidden">
-          <div className="overflow-x-auto table-wrap">
+          <div className="overflow-x-auto table-wrap table-wrapper">
             <table className="w-full text-sm min-w-[560px]">
               <thead>
                 <tr className="border-b border-border bg-muted/40">
@@ -189,7 +183,7 @@ export default function LogsTab() {
                 ) : (
                   filtered.map((entry) => (
                     <tr key={entry.id} className="border-b border-border/50 last:border-0 hover:bg-muted/20">
-                      <td className="py-2.5 ps-4 pe-4 text-foreground whitespace-nowrap">{formatLogTime(entry.time)}</td>
+                      <td className="py-2.5 ps-4 pe-4 text-foreground whitespace-nowrap">{formatDateTime(entry.time)}</td>
                       <td className="py-2.5 ps-4 pe-4">
                         <span
                           className={cn(

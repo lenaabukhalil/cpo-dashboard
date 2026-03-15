@@ -13,8 +13,9 @@ import { HeaderIconButton } from './HeaderIconButton'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from './ui/sheet'
 import { getLabel } from '../lib/translations'
 import { cn } from '../lib/utils'
+import { formatDateTime } from '../lib/dateFormat'
 
-function formatTime(ts?: number | string): string {
+function formatNotificationTime(ts?: number | string): string {
   if (ts == null) return '—'
   const d = new Date(typeof ts === 'number' ? ts : Number(ts))
   if (Number.isNaN(d.getTime())) return '—'
@@ -23,7 +24,7 @@ function formatTime(ts?: number | string): string {
   if (diff < 60_000) return 'Just now'
   if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`
   if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return formatDateTime(d)
 }
 
 export default function NotificationBell() {
@@ -146,7 +147,7 @@ export default function NotificationBell() {
     >
       <div className="min-w-0 flex-1">
         <p className="text-sm text-foreground">{n.message ?? 'Notification'}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">{formatTime(n.timestamp ?? n.createdAt)}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{formatNotificationTime(n.timestamp ?? n.createdAt)}</p>
       </div>
       <button
         type="button"
