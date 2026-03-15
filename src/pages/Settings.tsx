@@ -235,7 +235,7 @@ export default function Settings() {
       </Card>
 
       <p className="text-xs text-muted-foreground mt-4">
-        {t('settings.appVersion')}: {import.meta.env.VITE_APP_VERSION || '0.1.0'}
+        {t('settings.appVersion')}: {import.meta.env.VITE_APP_VERSION || '0.1.9'}
       </p>
     </div>
   )
