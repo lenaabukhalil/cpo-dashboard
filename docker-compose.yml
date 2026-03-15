@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  cpo-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_APP_VERSION: "0.1.9"
+    image: cpo-dashboard:latest
+    container_name: cpo-dashboard
+    ports:
+      - "80:80"
+    restart: unless-stopped
