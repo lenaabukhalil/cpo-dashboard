@@ -1184,9 +1184,12 @@ export default function AuditLog() {
                       const totalPages = Math.max(1, Math.ceil(total / insightsModalPerPage))
                       const page = Math.min(insightsModalPage, totalPages)
                       const start = (page - 1) * insightsModalPerPage
-                      const pageItems = isLoginAggregation
+                      const pageItemsAgg: LoginAggRow[] = isLoginAggregation
                         ? loginAgg.slice(start, start + insightsModalPerPage)
-                        : list.slice(start, start + insightsModalPerPage)
+                        : []
+                      const pageItemsCards: ActivityFeedCard[] = isLoginAggregation
+                        ? []
+                        : (list.slice(start, start + insightsModalPerPage) as ActivityFeedCard[])
 
                       return (
                         <div
@@ -1243,7 +1246,7 @@ export default function AuditLog() {
                                         </tr>
                                       </thead>
                                       <tbody>
-                                        {pageItems.map((r) => (
+                                        {pageItemsAgg.map((r) => (
                                           <tr key={r.actor} className="border-b border-border/70">
                                             <td className="p-3">{r.actor}</td>
                                             <td className="p-3 text-right tabular-nums">{r.count}</td>
@@ -1255,7 +1258,7 @@ export default function AuditLog() {
                                   </div>
                                 ) : (
                                   <div className="space-y-2">
-                                    {(pageItems as ActivityFeedCard[]).map((c) => {
+                                    {pageItemsCards.map((c) => {
                                       const isAudit = c.kind === 'audit'
                                       const entityLine = [c.entityType, c.entityId].filter(Boolean).join(' · ')
                                       return (
