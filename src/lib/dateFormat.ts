@@ -6,6 +6,8 @@
  * - Date only: DD/MM/YYYY
  * - Time only: hh:mm A (12-hour with AM/PM)
  * - DateTime: DD/MM/YYYY hh:mm A
+ * - Time only (24h): HH:mm
+ * - DateTime (24h): DD/MM/YYYY HH:mm
  *
  * Invalid, null, or undefined inputs display as "—".
  * Optional locale parameter for future i18n (e.g. from LanguageContext).
@@ -57,10 +59,30 @@ export function formatTime(value: DateInput, _locale?: string): string {
 }
 
 /**
+ * Format as time only (24-hour): HH:mm
+ */
+export function formatTime24(value: DateInput, _locale?: string): string {
+  const d = toDate(value)
+  if (!d) return FALLBACK
+  const h = pad2(d.getHours())
+  const m = pad2(d.getMinutes())
+  return `${h}:${m}`
+}
+
+/**
  * Format as date and time: DD/MM/YYYY hh:mm A
  */
 export function formatDateTime(value: DateInput, _locale?: string): string {
   const d = toDate(value)
   if (!d) return FALLBACK
   return `${formatDate(d)} ${formatTime(d)}`
+}
+
+/**
+ * Format as date and time (24-hour): DD/MM/YYYY HH:mm
+ */
+export function formatDateTime24(value: DateInput, _locale?: string): string {
+  const d = toDate(value)
+  if (!d) return FALLBACK
+  return `${formatDate(d)} ${formatTime24(d)}`
 }

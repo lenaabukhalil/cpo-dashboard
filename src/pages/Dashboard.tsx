@@ -158,7 +158,13 @@ export default function Dashboard() {
               {loading ? (
                 <div className="h-8 w-16 rounded bg-muted animate-pulse mt-1" />
               ) : (
-                <p className="text-2xl font-bold text-green-600">{stats?.chargersOnline ?? 0}</p>
+                <>
+                  <p className="text-2xl font-bold text-green-600">
+                    {stats?.chargersOnline ?? 0}{' '}
+                    <span className="text-sm font-normal text-muted-foreground">/ {totalChargers}</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">Online / Total</p>
+                </>
               )}
             </div>
             <CheckCircle className="h-8 w-8 text-green-600 shrink-0" />
@@ -189,9 +195,13 @@ export default function Dashboard() {
               {loading ? (
                 <div className="h-8 w-12 rounded bg-muted animate-pulse mt-1" />
               ) : (
-                <p className={`text-2xl font-bold ${offlineChargers > 0 ? 'text-red-600' : 'text-foreground'}`}>
-                  {offlineChargers}
-                </p>
+                <>
+                  <p className={`text-2xl font-bold ${offlineChargers > 0 ? 'text-red-600' : 'text-foreground'}`}>
+                    {offlineChargers}{' '}
+                    <span className="text-sm font-normal text-muted-foreground">/ {totalChargers}</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">Offline / Total</p>
+                </>
               )}
             </div>
             {offlineChargers > 0 ? (

@@ -24,9 +24,36 @@ import { AppSelect } from '../components/shared/AppSelect'
 import { AppMultiSelect } from '../components/shared/AppMultiSelect'
 import { TablePagination } from '../components/TablePagination'
 import { useTranslation } from '../context/LanguageContext'
-import { formatDateTime } from '../lib/dateFormat'
+import { formatDateTime24 } from '../lib/dateFormat'
 
 type TabId = 'sessions' | 'chargers' | 'connectors'
+
+function decodeHexToAsciiIfPrintable(hex: string): string | null {
+  const s = hex.trim()
+  if (!s || s.length % 2 !== 0) return null
+  if (!/^[0-9a-fA-F]+$/.test(s)) return null
+  // Avoid decoding short tokens that are unlikely to be a phone number.
+  if (s.length < 10) return null
+  try {
+    const bytes: number[] = []
+    for (let i = 0; i < s.length; i += 2) bytes.push(parseInt(s.slice(i, i + 2), 16))
+    const out = String.fromCharCode(...bytes).replace(/\0/g, '').trim()
+    const compact = out.replace(/\s+/g, '')
+    if (/^\+?\d{8,18}$/.test(compact)) return out
+    return null
+  } catch {
+    return null
+  }
+}
+
+function formatMobileDisplay(value: unknown): string {
+  const raw = value == null ? '' : String(value).trim()
+  if (!raw) return '—'
+  // If backend returns VARBINARY/BINARY as hex text, try to decode to readable phone.
+  const decoded = decodeHexToAsciiIfPrintable(raw)
+  if (decoded) return decoded
+  return raw
+}
 
 function useReportsTabs(): { id: TabId; labelKey: string }[] {
   return [
@@ -568,14 +595,14 @@ export default function Reports() {
                     <tbody>
                       {paginatedSessions.map((r, i) => (
                         <tr key={i} className="border-b border-border/50">
-                          <td className="py-2">{formatDateTime(r['Start Date/Time'])}</td>
+                          <td className="py-2">{formatDateTime24(r['Start Date/Time'])}</td>
                           <td className="py-2">{String(r['Session ID'] ?? '—')}</td>
                           <td className="py-2">{String(r.Location ?? '—')}</td>
                           <td className="py-2">{chargerIdToName.get(String(r.Charger ?? '').trim()) ?? r.Charger ?? '—'}</td>
                           <td className="py-2">{String(r.Connector ?? '—')}</td>
                           <td className="py-2 text-right">{String(r['Energy (KWH)'] ?? '—')}</td>
                           <td className="py-2 text-right pr-6">{String(r['Amount (JOD)'] ?? '—')}</td>
-                          <td className="py-2 pl-4 min-w-[120px]">{String(r.mobile ?? '—')}</td>
+                          <td className="py-2 pl-4 min-w-[120px]">{formatMobileDisplay(r.mobile)}</td>
                         </tr>
                       ))}
                     </tbody>

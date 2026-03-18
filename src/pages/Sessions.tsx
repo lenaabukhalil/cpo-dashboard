@@ -25,6 +25,39 @@ interface LocationWithChargers extends LocationType {
   chargers: ChargerWithConns[]
 }
 
+function connectorTypeLogo(connectorType?: string | null): { src: string; alt: string } | null {
+  const raw = (connectorType ?? '').trim()
+  if (!raw) return null
+  const norm = raw.toLowerCase().replace(/[\s_\-]/g, '')
+  const asset = (fileName: string) => `/${encodeURI(fileName)}`
+
+  // Map to exact filenames in /public (including spaces).
+  const map: Record<string, { src: string; alt: string }> = {
+    type1: { src: asset('type01.png'), alt: 'Type 1' },
+    type2: { src: asset('TYP22.png'), alt: 'Type 2' },
+    gbtac: { src: asset('GBTAC.png'), alt: 'GBT AC' },
+    gbtdc: { src: asset('GBTDC01.png'), alt: 'GBT DC' },
+    chademo: { src: asset('CHAdeMO.png'), alt: 'CHAdeMO' },
+    ccs: { src: asset('ccs1.png'), alt: 'CCS' },
+    ccs1: { src: asset('ccs1.png'), alt: 'CCS1' },
+    ccs2: { src: asset('CCS02.png'), alt: 'CCS2' },
+  }
+
+  // Direct match (normalized)
+  if (map[norm]) return map[norm]
+
+  // Variant matching as requested
+  if (norm.includes('type1')) return map.type1
+  if (norm.includes('type2')) return map.type2
+  if (norm.includes('gbtac')) return map.gbtac
+  if (norm.includes('gbtdc')) return map.gbtdc
+  if (norm.includes('chademo')) return map.chademo
+  if (norm === 'ccs' || norm.includes('ccs1')) return map.ccs1
+  if (norm.includes('ccs2')) return map.ccs2
+  if (norm.includes('ccs')) return map.ccs
+  return null
+}
+
 function StatusBadge({ status }: { status: string }) {
   const v = (status ?? '').toLowerCase()
   const isAvailable = ['online', 'available', 'free'].includes(v)
@@ -191,29 +224,41 @@ export default function Sessions() {
                 </div>
                 <div className="rounded-lg border border-border bg-card p-4 flex items-start justify-between gap-2">
                   <div>
-                    <p className="text-sm text-muted-foreground">{t('monitor.onlineChargersOnTotal')}</p>
-                    <p className="text-2xl font-bold mt-1 text-green-600">{statusStats.onlineChargers} / {statusStats.totalChargers}</p>
+                    <p className="text-sm text-muted-foreground">{t('monitor.onlineChargers')}</p>
+                    <p className="text-2xl font-bold mt-1 text-green-600">
+                      {statusStats.onlineChargers} <span className="text-sm font-normal text-muted-foreground">/ {statusStats.totalChargers}</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">Online / Total</p>
                   </div>
                   <CheckCircle className="h-8 w-8 shrink-0 text-green-600" />
                 </div>
                 <div className="rounded-lg border border-border bg-card p-4 flex items-start justify-between gap-2">
                   <div>
-                    <p className="text-sm text-muted-foreground">{t('monitor.availableConnectorOnTotal')}</p>
-                    <p className="text-2xl font-bold mt-1 text-green-600">{statusStats.availableConnector} / {statusStats.totalConnectors}</p>
+                    <p className="text-sm text-muted-foreground">Available Connector</p>
+                    <p className="text-2xl font-bold mt-1 text-green-600">
+                      {statusStats.availableConnector} <span className="text-sm font-normal text-muted-foreground">/ {statusStats.totalConnectors}</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">Available / Total</p>
                   </div>
                   <CheckCircle className="h-8 w-8 shrink-0 text-green-600" />
                 </div>
                 <div className="rounded-lg border border-border bg-card p-4 flex items-start justify-between gap-2">
                   <div>
-                    <p className="text-sm text-muted-foreground">{t('monitor.offlineChargersOnTotal')}</p>
-                    <p className="text-2xl font-bold mt-1 text-foreground">{statusStats.offlineChargers} / {statusStats.totalChargers}</p>
+                    <p className="text-sm text-muted-foreground">{t('monitor.offlineChargers')}</p>
+                    <p className="text-2xl font-bold mt-1 text-foreground">
+                      {statusStats.offlineChargers} <span className="text-sm font-normal text-muted-foreground">/ {statusStats.totalChargers}</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">Offline / Total</p>
                   </div>
                   <Activity className="h-8 w-8 shrink-0 text-muted-foreground" />
                 </div>
                 <div className="rounded-lg border border-border bg-card p-4 flex items-start justify-between gap-2">
                   <div>
-                    <p className="text-sm text-muted-foreground">{t('monitor.unavailableConnectorOnTotal')}</p>
-                    <p className="text-2xl font-bold mt-1 text-red-600">{statusStats.unavailableConnector} / {statusStats.totalConnectors}</p>
+                    <p className="text-sm text-muted-foreground">{t('monitor.unavailableConnector')}</p>
+                    <p className="text-2xl font-bold mt-1 text-red-600">
+                      {statusStats.unavailableConnector} <span className="text-sm font-normal text-muted-foreground">/ {statusStats.totalConnectors}</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">Unavailable / Total</p>
                   </div>
                   <AlertCircle className="h-8 w-8 shrink-0 text-red-600" />
                 </div>
@@ -264,9 +309,30 @@ export default function Sessions() {
                                   ) : (
                                     ch.connectors.map((conn) => {
                                       const liveStatus = getConnectorStatusFromList(ch.id, conn.id) ?? conn.status
+                                      const logo = connectorTypeLogo(conn.connector_type ?? conn.type)
                                       return (
                                         <div key={conn.id} className="flex items-center gap-2 flex-wrap rounded-lg border border-border bg-background px-3 py-2 text-sm">
-                                          <Plug className="h-3.5 w-3.5 text-blue-500" />
+                                          {logo ? (
+                                            <span className="h-6 w-6 shrink-0 inline-flex items-center justify-center overflow-hidden">
+                                              <img
+                                                src={logo.src}
+                                                alt={logo.alt}
+                                                className={cn(
+                                                  'h-full w-full object-contain block',
+                                                  // Some logos (e.g. GBTAC.png) have extra inner padding → scale slightly.
+                                                  logo.alt === 'GBT AC' && 'scale-[1.70]',
+                                                  logo.alt === 'CCS2' && 'scale-[1.70]',
+                                                  logo.alt === 'GBT DC' && 'scale-[1.35]'
+                                                )}
+                                                onError={(e) => {
+                                                  // If public asset can't be loaded, fall back to the icon.
+                                                  ;(e.currentTarget as HTMLImageElement).style.display = 'none'
+                                                }}
+                                              />
+                                            </span>
+                                          ) : (
+                                            <Plug className="h-6 w-6 text-blue-500 shrink-0" />
+                                          )}
                                           <span className="text-muted-foreground">{conn.connector_type ?? conn.type ?? '—'}</span>
                                           <StatusBadge status={liveStatus} />
                                           {conn.power != null && <span className="text-muted-foreground">{conn.power} {conn.power_unit ?? 'kW'}</span>}

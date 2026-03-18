@@ -10,5 +10,5 @@ services:
     image: cpo-dashboard:latest
     container_name: cpo-dashboard
     ports:
-      - "80:80"
+      - "8883:80"
     restart: unless-stopped
