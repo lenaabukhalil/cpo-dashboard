@@ -17,6 +17,7 @@ import PartnerUsers from './pages/PartnerUsers'
 import SupportLayout from './pages/support/SupportLayout'
 import ListOfLocationChargerConnectorTariffs from './pages/ListOfLocationChargerConnectorTariffs'
 import AuditLog from './pages/AuditLog'
+import Profile from './pages/Profile'
 
 function isOperator(roleName: string | undefined): boolean {
   return (roleName || '').toLowerCase() === 'operator'
@@ -95,7 +96,7 @@ function AppRoutes() {
         <Route path="audit-log" element={<RoleGuard><AuditLog /></RoleGuard>} />
         <Route path="access-log" element={<Navigate to="/audit-log" replace />} />
         <Route path="settings" element={<RoleGuard><Settings /></RoleGuard>} />
-        <Route path="profile" element={<Navigate to="/settings" replace />} />
+        <Route path="profile" element={<Profile />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -8,6 +8,7 @@ import {
   getActiveSessionsHistory,
   getActiveSessions,
   type ConnectorStatusRow,
+  type ConnectorsStatusSummary,
   type ActiveSessionRow,
 } from '../services/api'
 import { useAuth } from '../context/AuthContext'
@@ -37,6 +38,7 @@ export default function Dashboard() {
     utilization?: number
   } | null>(null)
   const [connectorsList, setConnectorsList] = useState<ConnectorStatusRow[]>([])
+  const [connectorsSummary, setConnectorsSummary] = useState<ConnectorsStatusSummary | null>(null)
   const [historyPoints, setHistoryPoints] = useState<{ ts: number; count: number }[]>([])
   const [activeSessionsList, setActiveSessionsList] = useState<ActiveSessionRow[]>([])
   const [historyUpdatedAt, setHistoryUpdatedAt] = useState<Date | null>(null)
@@ -63,12 +65,27 @@ export default function Dashboard() {
       .catch(() => {})
       .finally(hideLoadingWhenCardsReady)
 
-    getConnectorsStatus()
+    getConnectorsStatus({ skipCache: true })
       .then((connectorsRes) => {
-        const conn = (connectorsRes as { data?: ConnectorStatusRow[] }).data
+        const conn = connectorsRes.data
         setConnectorsList(Array.isArray(conn) ? conn : [])
+        const s = connectorsRes.summary
+        if (
+          s &&
+          typeof s.totalConnectors === 'number' &&
+          Number.isFinite(s.totalConnectors) &&
+          typeof s.availableCount === 'number' &&
+          Number.isFinite(s.availableCount)
+        ) {
+          setConnectorsSummary(s)
+        } else {
+          setConnectorsSummary(null)
+        }
       })
-      .catch(() => setConnectorsList([]))
+      .catch(() => {
+        setConnectorsList([])
+        setConnectorsSummary(null)
+      })
       .finally(hideLoadingWhenCardsReady)
 
     getActiveSessionsHistory(24)
@@ -105,9 +122,12 @@ export default function Dashboard() {
         return String(val ?? '').toLowerCase().trim() !== 'online'
       }).length
     : 0
-  // Use same source and logic as Monitor: getConnectorsStatus() list, available = status === 'available'
-  const totalConnectorsFromList = connectorsList.length
-  const availableConnectors = connectorsList.filter((r) => (r.status ?? '').toLowerCase() === 'available').length
+  const totalConnectorsFromList =
+    connectorsSummary != null ? connectorsSummary.totalConnectors : connectorsList.length
+  const availableConnectors =
+    connectorsSummary != null
+      ? connectorsSummary.availableCount
+      : connectorsList.filter((r) => (r.status ?? '').toLowerCase() === 'available').length
 
   const { t } = useTranslation()
   if (!user) return null
@@ -122,10 +142,10 @@ export default function Dashboard() {
       </div>
 
       <section
-        className="rounded-2xl border border-[#E5E7EB] bg-white p-6 dark:border-gray-700 dark:bg-card"
+        className="rounded-2xl border border-border bg-card p-6"
         aria-labelledby="quick-actions-heading"
       >
-        <h2 id="quick-actions-heading" className="text-base font-semibold text-[#111827] dark:text-gray-100 mb-4">
+        <h2 id="quick-actions-heading" className="text-base font-semibold text-foreground mb-4">
           {t('dashboard.quickActions')}
         </h2>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -178,14 +198,14 @@ export default function Dashboard() {
                 <div className="h-8 w-24 rounded bg-muted animate-pulse mt-1" />
               ) : (
                 <>
-                  <p className="text-2xl font-bold text-foreground">
+                  <p className="text-2xl font-bold text-green-600">
                     {availableConnectors} <span className="text-sm font-normal text-muted-foreground">/ {totalConnectorsFromList}</span>
                   </p>
                   <p className="text-xs text-muted-foreground">{t('dashboard.availableTotal')}</p>
                 </>
               )}
             </div>
-            <Plug className="h-8 w-8 text-muted-foreground shrink-0" />
+            <Plug className="h-8 w-8 text-green-600 shrink-0" />
           </CardContent>
         </Card>
         <Card className="border border-border">
@@ -196,7 +216,7 @@ export default function Dashboard() {
                 <div className="h-8 w-12 rounded bg-muted animate-pulse mt-1" />
               ) : (
                 <>
-                  <p className={`text-2xl font-bold ${offlineChargers > 0 ? 'text-red-600' : 'text-foreground'}`}>
+                  <p className="text-2xl font-bold text-foreground">
                     {offlineChargers}{' '}
                     <span className="text-sm font-normal text-muted-foreground">/ {totalChargers}</span>
                   </p>
@@ -205,30 +225,13 @@ export default function Dashboard() {
               )}
             </div>
             {offlineChargers > 0 ? (
-              <AlertCircle className="h-8 w-8 text-red-600 shrink-0" />
+              <AlertCircle className="h-8 w-8 text-muted-foreground shrink-0" />
             ) : (
               <Activity className="h-8 w-8 text-muted-foreground shrink-0" />
             )}
           </CardContent>
         </Card>
       </div>
-
-      {/* Offline alert */}
-      {!loading && offlineChargers > 0 && (
-        <Card className="border-red-200 bg-red-50/50 dark:bg-red-950/20 dark:border-red-900">
-          <CardContent className="p-4 flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-red-600 shrink-0" />
-              <span className="text-sm font-medium text-foreground">
-                {offlineChargers} {t('dashboard.offlineAlert')}
-              </span>
-            </div>
-            <Link to="/sessions" className="text-sm text-primary hover:underline flex items-center gap-1">
-              {t('dashboard.viewMonitor')} <ExternalLink className="h-3 w-3 shrink-0" />
-            </Link>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Chart + Active sessions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

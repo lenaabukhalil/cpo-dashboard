@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { LogOut } from 'lucide-react'
+import { Building2, LogOut, Pencil } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from '../context/LanguageContext'
@@ -91,32 +91,50 @@ export default function Sidebar({ open: _open = true, onOpenChange, side = 'left
     >
       <div className="flex flex-col h-full min-h-0">
         <div className="px-4 pt-4 pb-3">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              className={cn(
-                'h-10 w-10 rounded-xl border border-border bg-background flex items-center justify-center shrink-0 overflow-hidden',
-                orgId != null ? 'cursor-pointer hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2' : '',
-              )}
-              onClick={() => {
-                if (orgId != null) setLogoDialogOpen(true)
-              }}
-              aria-label={orgId != null ? 'Change organization logo' : 'Logo'}
-            >
-              {savedLogoUrl ? (
-                <img
-                  src={savedLogoUrl}
-                  alt={org?.name || 'Organization logo'}
-                  className="h-full w-full object-contain"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none'
-                  }}
-                />
-              ) : (
-                <span className="text-sm font-semibold text-foreground">go.</span>
-              )}
-            </button>
-            <div className="min-w-0">
+          <div className="flex items-start gap-3">
+            <div className="flex flex-col items-center gap-2 shrink-0">
+              <button
+                type="button"
+                title={orgId != null ? 'Edit organization logo' : undefined}
+                className={cn(
+                  'relative h-10 w-10 rounded-xl border border-border bg-background flex items-center justify-center shrink-0 overflow-hidden transition-all duration-200',
+                  orgId != null
+                    ? 'cursor-pointer group/logo hover:bg-muted/40 hover:border-primary/45 hover:ring-2 hover:ring-ring/60 hover:ring-offset-2 hover:ring-offset-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card'
+                    : 'cursor-default',
+                )}
+                onClick={() => {
+                  if (orgId != null) setLogoDialogOpen(true)
+                }}
+                aria-label={orgId != null ? 'Change organization logo' : 'Logo'}
+              >
+                {savedLogoUrl ? (
+                  <img
+                    src={savedLogoUrl}
+                    alt={org?.name || 'Organization logo'}
+                    className="h-full w-full object-contain"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none'
+                    }}
+                  />
+                ) : (
+                  <Building2
+                    className="h-[1.125rem] w-[1.125rem] text-muted-foreground"
+                    strokeWidth={2}
+                    aria-hidden
+                  />
+                )}
+                {orgId != null ? (
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-[inherit] bg-background/55 opacity-0 transition-opacity duration-200 group-hover/logo:opacity-100"
+                  >
+                    <Pencil className="h-3.5 w-3.5 text-foreground drop-shadow-sm" strokeWidth={2.25} aria-hidden />
+                  </span>
+                ) : null}
+              </button>
+            </div>
+
+            <div className="min-w-0 pt-0.5 flex-1">
               <div className="text-base font-semibold text-foreground truncate">{title}</div>
               <div className="mt-0.5 text-xs text-muted-foreground truncate">{subtitle}</div>
             </div>
@@ -127,7 +145,7 @@ export default function Sidebar({ open: _open = true, onOpenChange, side = 'left
           {groups.map(([groupLabel, items]) => (
             <div key={groupLabel || 'root'} className="mt-3 first:mt-0">
               {groupLabel ? (
-                <div className="px-3 py-1 text-[11px] font-semibold tracking-wide text-muted-foreground/80 uppercase">
+                <div className="px-3 py-1 text-xs font-semibold tracking-wide text-gray-500 uppercase">
                   {groupLabel}
                 </div>
               ) : null}
@@ -137,24 +155,40 @@ export default function Sidebar({ open: _open = true, onOpenChange, side = 'left
                   const Icon = it.icon
                   const label = it.labelKey ? t(it.labelKey) : it.label
                   return (
-                    <NavLink
-                      key={it.to}
-                      to={it.to}
-                      end={it.end}
-                      onClick={handleNavigate}
-                      className={({ isActive }) =>
-                        cn(
-                          'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors outline-none',
-                          'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                          isActive
-                            ? 'bg-primary text-primary-foreground'
-                            : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
-                        )
-                      }
-                    >
-                      <Icon className="h-4 w-4 shrink-0" />
-                      <span className="min-w-0 truncate">{label}</span>
-                    </NavLink>
+                    <div key={it.to} className="space-y-1">
+                      <NavLink
+                        to={it.to}
+                        end={it.end}
+                        onClick={handleNavigate}
+                        className={({ isActive }) =>
+                          cn(
+                            'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors outline-none',
+                            'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                            isActive
+                              ? 'bg-primary text-primary-foreground'
+                              : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
+                          )
+                        }
+                      >
+                        <Icon className="h-4 w-4 shrink-0" />
+                        <span className="min-w-0 truncate">{label}</span>
+                      </NavLink>
+
+                      {it.to === '/settings' ? (
+                        <button
+                          type="button"
+                          onClick={handleLogout}
+                          className={cn(
+                            'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-destructive transition-colors outline-none',
+                            'hover:bg-destructive/10',
+                            'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                          )}
+                        >
+                          <LogOut className="h-4 w-4 shrink-0" />
+                          <span className="min-w-0 truncate">Logout</span>
+                        </button>
+                      ) : null}
+                    </div>
                   )
                 })}
               </div>
@@ -162,36 +196,31 @@ export default function Sidebar({ open: _open = true, onOpenChange, side = 'left
           ))}
         </div>
 
-        <div className="border-t border-border p-3 pb-5">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 px-4 pt-1">
-            <button
-              type="button"
-              className="flex items-center gap-3 rounded-lg py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 px-3 -mx-3"
-              onClick={handleLogout}
-            >
-              <LogOut className="h-5 w-5 shrink-0" />
-              <span>Logout</span>
-            </button>
-            <div className="flex flex-col items-start leading-none text-muted-foreground">
-              <div className="text-[11px] font-normal text-muted-foreground/80 whitespace-nowrap">Powered by ION</div>
-              <img
-                src="/ion-powered.png"
-                alt="ION Logo"
-                className="mt-1 w-[72px] h-auto object-contain opacity-90"
-                onError={(e) => {
-                  ;(e.currentTarget as HTMLImageElement).style.display = 'none'
-                }}
-              />
+        <div className="mt-auto border-t border-gray-200 pt-4 mt-4 px-4 pb-5">
+          <div className="cursor-pointer transition-colors duration-150 hover:text-gray-600">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex w-5 h-5 items-center justify-center overflow-hidden rounded-md">
+                <img
+                  src="/favicon.png"
+                  alt="App icon"
+                  className="w-5 h-5 object-contain"
+                  onError={(e) => {
+                    ;(e.currentTarget as HTMLImageElement).style.display = 'none'
+                  }}
+                />
+              </span>
+              <span className="text-sm text-gray-500">Powered by: ION</span>
             </div>
-          </div>
+            <div className="mt-1 text-xs text-gray-400">Electric Vehicle Charging Systems</div>
 
-          {mobile ? (
-            <div className="px-4 pt-3">
-              <Button variant="ghost" className="w-full justify-center" onClick={() => onOpenChange?.(false)}>
-                Close
-              </Button>
-            </div>
-          ) : null}
+            {mobile ? (
+              <div className="pt-3">
+                <Button variant="ghost" className="w-full justify-center" onClick={() => onOpenChange?.(false)}>
+                  Close
+                </Button>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         {orgId != null ? (

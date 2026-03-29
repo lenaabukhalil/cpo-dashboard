@@ -631,6 +631,7 @@ export interface LocalSessionRow {
   stop_reason?: string
 }
 
+/** `from` / `to` as sent to CPO API: `YYYY-MM-DD` (full local days) or `YYYY-MM-DDTHH:mm` / `YYYY-MM-DD HH:mm:ss` for a precise range (Node-RED parser). */
 export interface SessionsReportParams {
   from: string
   to: string
@@ -642,6 +643,8 @@ export interface SessionsReportParams {
   connectorIds?: string
   energyMin?: string
   energyMax?: string
+  /** Match DB sort: `asc` = oldest first, `desc` = newest first (default) */
+  dateOrder?: 'asc' | 'desc'
 }
 
 export async function getSessionsReport(params: SessionsReportParams) {
@@ -651,6 +654,7 @@ export async function getSessionsReport(params: SessionsReportParams) {
   if (params.connectorIds != null && String(params.connectorIds).trim() !== '') query.connectorIds = String(params.connectorIds).trim()
   if (params.energyMin != null && String(params.energyMin).trim() !== '') query.energyMin = String(params.energyMin).trim()
   if (params.energyMax != null && String(params.energyMax).trim() !== '') query.energyMax = String(params.energyMax).trim()
+  if (params.dateOrder === 'asc') query.dateOrder = 'asc'
   return request<{ success?: boolean; count: number; data: SessionsReportRow[] }>(`${CPO_API}/sessions-report`, { params: query })
 }
 
@@ -662,6 +666,7 @@ export async function exportSessionsReport(params: SessionsReportParams): Promis
   if (params.connectorIds != null && String(params.connectorIds).trim() !== '') query.connectorIds = String(params.connectorIds).trim()
   if (params.energyMin != null && String(params.energyMin).trim() !== '') query.energyMin = String(params.energyMin).trim()
   if (params.energyMax != null && String(params.energyMax).trim() !== '') query.energyMax = String(params.energyMax).trim()
+  if (params.dateOrder === 'asc') query.dateOrder = 'asc'
   const qs = new URLSearchParams(query).toString()
   const token = getToken()
   const url = `${BASE}${CPO_API}/sessions-report/export?${qs}`
@@ -698,10 +703,28 @@ export async function getActiveSessionsHistory(hours?: number) {
   })
 }
 
-export async function getConnectorsStatus(opts?: { skipCache?: boolean }) {
-  return request<{ count: number; data: ConnectorStatusRow[] }>(`${CPO_API}/connectors-status`, {
+/** Server-aggregated counts from the same query as connectors-status rows (window functions). */
+export interface ConnectorsStatusSummary {
+  totalConnectors: number
+  availableCount: number
+  busyCount: number
+}
+
+/** Full JSON from GET /cpo/connectors-status (`request` spreads the body; summary is top-level). */
+export type ConnectorsStatusApiResponse = {
+  success: boolean
+  count?: number
+  data?: ConnectorStatusRow[]
+  summary?: ConnectorsStatusSummary
+  message?: string
+  statusCode?: number
+}
+
+export async function getConnectorsStatus(opts?: { skipCache?: boolean }): Promise<ConnectorsStatusApiResponse> {
+  const res = await request<ConnectorStatusRow[]>(`${CPO_API}/connectors-status`, {
     ...(opts?.skipCache && { skipCache: true }),
   })
+  return res as ConnectorsStatusApiResponse
 }
 
 export interface ConnectorStatusRow {
@@ -717,6 +740,7 @@ export interface ConnectorStatusRow {
   location_name?: string
   locationName?: string
   organizationName?: string
+  enabled?: number | boolean
 }
 
 export async function getChargerStatus(chargerId: number) {

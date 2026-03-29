@@ -23,8 +23,15 @@ import { useAuth } from '../context/AuthContext'
 import { AppSelect } from '../components/shared/AppSelect'
 import { AppMultiSelect } from '../components/shared/AppMultiSelect'
 import { TablePagination } from '../components/TablePagination'
+import { SessionsReportDateTimeField } from '../components/SessionsReportDateTimeField'
 import { useTranslation } from '../context/LanguageContext'
-import { formatDateTime24 } from '../lib/dateFormat'
+import { compareSessionsReportRowsByStartTime, formatMysqlWallClock24h } from '../lib/dateFormat'
+import {
+  getTodayMidnightDatetimeLocal,
+  sanitizeFilenameDateRange,
+  toDateOnlyForComparisonApi,
+  validateSessionsDatetimeRange,
+} from '../lib/sessionsReportRange'
 
 type TabId = 'sessions' | 'chargers' | 'connectors'
 
@@ -65,9 +72,16 @@ function useReportsTabs(): { id: TabId; labelKey: string }[] {
 
 const PER_PAGE_DEFAULT = 10
 
-/** Default From/To for Sessions report (same as initial page load). Reused when clearing filters. */
-const DEFAULT_SESSION_FROM = ''
-const DEFAULT_SESSION_TO = ''
+/** Current local date and time as `YYYY-MM-DDTHH:mm` (sessions To field default when date is today). */
+function getNowDatetimeLocal(): string {
+  const n = new Date()
+  const y = n.getFullYear()
+  const mo = String(n.getMonth() + 1).padStart(2, '0')
+  const d = String(n.getDate()).padStart(2, '0')
+  const h = String(n.getHours()).padStart(2, '0')
+  const mi = String(n.getMinutes()).padStart(2, '0')
+  return `${y}-${mo}-${d}T${h}:${mi}`
+}
 
 function daysBetween(start: string, end: string): number {
   const a = new Date(start).getTime()
@@ -106,13 +120,29 @@ function connectorScore(row: ConnectorComparisonRow | null, days: number): numbe
   return (sPerDay + kwhPerDay + amountPerDay + kwhPerSession) / 4
 }
 
+function sessionsRangeValidationMessage(
+  code: NonNullable<ReturnType<typeof validateSessionsDatetimeRange>>,
+  t: (key: string) => string
+): string {
+  switch (code) {
+    case 'required':
+      return t('reports.validationDateRequired')
+    case 'invalidFormat':
+      return t('reports.validationInvalidDateTimeFormat')
+    case 'fromAfterTo':
+      return t('reports.validationFromBeforeTo')
+    default:
+      return t('reports.validationInvalidDate')
+  }
+}
+
 export default function Reports() {
   const { user } = useAuth()
   const { t } = useTranslation()
   const tabs = useReportsTabs()
   const [tab, setTab] = useState<TabId>('sessions')
-  const [from, setFrom] = useState(DEFAULT_SESSION_FROM)
-  const [to, setTo] = useState(DEFAULT_SESSION_TO)
+  const [from, setFrom] = useState(() => getTodayMidnightDatetimeLocal())
+  const [to, setTo] = useState(() => getNowDatetimeLocal())
   const [locations, setLocations] = useState<Location[]>([])
   // Sessions report: null = never loaded, [] = loaded empty, [...] = loaded with data
   const [sessionsData, setSessionsData] = useState<SessionsReportRow[] | null>(null)
@@ -126,6 +156,8 @@ export default function Reports() {
   const [connectorIds, setConnectorIds] = useState<string[]>([])
   const [energyMin, setEnergyMin] = useState('')
   const [energyMax, setEnergyMax] = useState('')
+  /** Chronological sort for the table: applied on the client (see sessionsList) so it matches issue_date even if API orders by session_id. */
+  const [dateOrder, setDateOrder] = useState<'asc' | 'desc'>('desc')
   const [connectorsForSessionFilter, setConnectorsForSessionFilter] = useState<Connector[]>([])
 
   // Sessions paging
@@ -145,8 +177,17 @@ export default function Reports() {
     return m
   }, [allOrgChargers])
 
-  // Backend returns filtered data; no frontend filtering
-  const sessionsList = sessionsData ?? []
+  // Backend may ORDER BY session_id only; sort by Start Date/Time (issue_date) so "Date order" works
+  const sessionsList = useMemo(() => {
+    const list = sessionsData ?? []
+    if (list.length < 2) return list
+    const next = [...list]
+    next.sort((a, b) => {
+      const c = compareSessionsReportRowsByStartTime(a, b)
+      return dateOrder === 'asc' ? c : -c
+    })
+    return next
+  }, [sessionsData, dateOrder])
   const paginatedSessions = useMemo(
     () => sessionsList.slice((pageSession - 1) * perPageSession, pageSession * perPageSession),
     [sessionsList, pageSession, perPageSession]
@@ -342,24 +383,16 @@ export default function Reports() {
     if (connectorIds.length > 0) params.connectorIds = connectorIds.join(',')
     if (energyMin.trim() !== '') params.energyMin = energyMin.trim()
     if (energyMax.trim() !== '') params.energyMax = energyMax.trim()
+    if (dateOrder === 'asc') params.dateOrder = 'asc'
     return params
   }
 
   const loadSessions = () => {
     const f = from.trim()
     const toVal = to.trim()
-    if (!f || !toVal) {
-      setSessionError(t('reports.validationDateRequired') || 'From and To dates are required')
-      return
-    }
-    const fromDate = new Date(f)
-    const toDate = new Date(toVal)
-    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
-      setSessionError(t('reports.validationInvalidDate') || 'Please enter valid From and To dates')
-      return
-    }
-    if (fromDate > toDate) {
-      setSessionError(t('reports.validationFromBeforeTo') || 'From date must be before or equal to To date')
+    const rangeErr = validateSessionsDatetimeRange(f, toVal)
+    if (rangeErr) {
+      setSessionError(sessionsRangeValidationMessage(rangeErr, t))
       return
     }
     const minKwh = energyMin.trim() !== '' ? parseFloat(energyMin) : NaN
@@ -390,10 +423,12 @@ export default function Reports() {
 
   const runCompareChargerAB = () => {
     if (!chargerAId || !chargerBId) return
-    const sA = startA || from || '2025-01-01'
-    const eA = endA || to || '2026-12-31'
-    const sB = startB || from || '2025-01-01'
-    const eB = endB || to || '2026-12-31'
+    const fromDay = from ? toDateOnlyForComparisonApi(from) : ''
+    const toDay = to ? toDateOnlyForComparisonApi(to) : ''
+    const sA = startA || fromDay || '2025-01-01'
+    const eA = endA || toDay || '2026-12-31'
+    const sB = startB || fromDay || '2025-01-01'
+    const eB = endB || toDay || '2026-12-31'
     setLoadingCompareCharger(true)
     setCompareChargerA(null)
     setCompareChargerB(null)
@@ -412,10 +447,12 @@ export default function Reports() {
 
   const runCompareConnectorAB = () => {
     if (!connectorAId || !connectorBId || !connectorChargerAId || !connectorChargerBId) return
-    const sA = connectorStartA || from || '2025-01-01'
-    const eA = connectorEndA || to || '2026-12-31'
-    const sB = connectorStartB || from || '2025-01-01'
-    const eB = connectorEndB || to || '2026-12-31'
+    const fromDay = from ? toDateOnlyForComparisonApi(from) : ''
+    const toDay = to ? toDateOnlyForComparisonApi(to) : ''
+    const sA = connectorStartA || fromDay || '2025-01-01'
+    const eA = connectorEndA || toDay || '2026-12-31'
+    const sB = connectorStartB || fromDay || '2025-01-01'
+    const eB = connectorEndB || toDay || '2026-12-31'
     setLoadingCompareConnector(true)
     setCompareConnectorA(null)
     setCompareConnectorB(null)
@@ -435,8 +472,9 @@ export default function Reports() {
   const exportSessionsExcel = () => {
     const f = from.trim()
     const toVal = to.trim()
-    if (!f || !toVal) {
-      setSessionError(t('reports.validationDateRequired') || 'From and To dates are required')
+    const rangeErr = validateSessionsDatetimeRange(f, toVal)
+    if (rangeErr) {
+      setSessionError(sessionsRangeValidationMessage(rangeErr, t))
       return
     }
     setExportLoading(true)
@@ -445,7 +483,7 @@ export default function Reports() {
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        a.download = filename || `sessions-report-${f}-${toVal}.xlsx`
+        a.download = filename || `sessions-report-${sanitizeFilenameDateRange(f)}-${sanitizeFilenameDateRange(toVal)}.xlsx`
         a.click()
         URL.revokeObjectURL(url)
       })
@@ -502,67 +540,106 @@ export default function Reports() {
             {(from.trim() && to.trim()) && (
               <Button type="button" variant="outline" size="sm" onClick={exportSessionsExcel} disabled={exportLoading} className="shrink-0 gap-2">
                 <Download className="h-4 w-4" />
-                {exportLoading ? t('reports.loading') : t('reports.exportExcel')}
+                {exportLoading ? t('reports.loading') : t('reports.exportCsv')}
               </Button>
             )}
           </CardHeader>
           <CardContent>
             {/* Filters: all sent to backend on Load sessions */}
-            <div className="flex flex-wrap items-end gap-4 mb-4 pb-4 border-b border-border">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">{t('reports.from')}</Label>
-                <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} placeholder={t('common.datePlaceholder')} className="w-full min-w-[140px] sm:w-40" />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">{t('reports.to')}</Label>
-                <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} placeholder={t('common.datePlaceholder')} className="w-full min-w-[140px] sm:w-40" />
-              </div>
-              <div className="space-y-1.5 min-w-[180px]">
-                <Label className="text-xs text-muted-foreground">{t('list.location')}</Label>
-                <AppMultiSelect
-                  options={locationOptions}
-                  value={locationIds}
-                  onChange={setLocationIds}
-                  placeholder={t('reports.allLocations')}
-                  className="bg-background"
-                />
-              </div>
-              <div className="space-y-1.5 min-w-[180px]">
-                <Label className="text-xs text-muted-foreground">{t('list.charger')}</Label>
-                <AppMultiSelect
-                  options={chargerFilterOptions}
-                  value={chargerIds}
-                  onChange={setChargerIds}
-                  placeholder={t('reports.allChargers')}
-                  className="bg-background"
-                />
-              </div>
-              <div className="space-y-1.5 min-w-[180px]">
-                <Label className="text-xs text-muted-foreground">{t('list.connectors')}</Label>
-                <AppMultiSelect
-                  options={connectorFilterOptions}
-                  value={connectorIds}
-                  onChange={setConnectorIds}
-                  placeholder={t('reports.allConnectors')}
-                  className="bg-background"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Energy (KWH)</Label>
-                <div className="flex items-center gap-2">
-                  <Input type="number" placeholder="Min" value={energyMin} onChange={(e) => setEnergyMin(e.target.value)} className="w-24 h-10 text-sm rounded-lg" min={0} step="any" />
-                  <span className="text-muted-foreground">–</span>
-                  <Input type="number" placeholder="Max" value={energyMax} onChange={(e) => setEnergyMax(e.target.value)} className="w-24 h-10 text-sm rounded-lg" min={0} step="any" />
+            <div className="space-y-3 mb-2 pb-4 border-b border-border">
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="min-w-0 shrink-0">
+                  <SessionsReportDateTimeField
+                    fieldLabel={t('reports.from')}
+                    value={from}
+                    onChange={setFrom}
+                    emptyTimeDefault="00:00"
+                  />
+                </div>
+                <div className="min-w-0 shrink-0">
+                  <SessionsReportDateTimeField
+                    fieldLabel={t('reports.to')}
+                    value={to}
+                    onChange={setTo}
+                    emptyTimeDefault="23:59"
+                  />
+                </div>
+                <div className="space-y-1.5 min-w-[180px]">
+                  <Label className="text-xs text-muted-foreground">{t('list.location')}</Label>
+                  <AppMultiSelect
+                    options={locationOptions}
+                    value={locationIds}
+                    onChange={setLocationIds}
+                    placeholder={t('reports.allLocations')}
+                    className="bg-background"
+                  />
+                </div>
+                <div className="space-y-1.5 min-w-[180px]">
+                  <Label className="text-xs text-muted-foreground">{t('list.charger')}</Label>
+                  <AppMultiSelect
+                    options={chargerFilterOptions}
+                    value={chargerIds}
+                    onChange={setChargerIds}
+                    placeholder={t('reports.allChargers')}
+                    className="bg-background"
+                  />
                 </div>
               </div>
-              <Button type="button" onClick={loadSessions} disabled={loading}>
-                {loading ? t('reports.loading') : t('reports.loadSessions')}
-              </Button>
-              {(from.trim() || to.trim() || locationIds.length > 0 || chargerIds.length > 0 || connectorIds.length > 0 || energyMin.trim() || energyMax.trim()) && (
-                <Button type="button" variant="outline" size="sm" onClick={clearSessionFilters}>
-                  Clear filters
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="space-y-1.5 min-w-[180px]">
+                  <Label className="text-xs text-muted-foreground">{t('list.connectors')}</Label>
+                  <AppMultiSelect
+                    options={connectorFilterOptions}
+                    value={connectorIds}
+                    onChange={setConnectorIds}
+                    placeholder={t('reports.allConnectors')}
+                    className="bg-background"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Energy (KWH)</Label>
+                  <div className="flex h-10 items-center gap-2">
+                    <Input type="number" placeholder="Min" value={energyMin} onChange={(e) => setEnergyMin(e.target.value)} className="h-10 w-24 text-sm rounded-lg" min={0} step="any" />
+                    <span className="text-muted-foreground">–</span>
+                    <Input type="number" placeholder="Max" value={energyMax} onChange={(e) => setEnergyMax(e.target.value)} className="h-10 w-24 text-sm rounded-lg" min={0} step="any" />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">{t('reports.dateSort')}</Label>
+                  <div
+                    className="flex h-10 items-center rounded-lg border border-border bg-muted/30 p-0.5 gap-0.5"
+                    role="group"
+                    aria-label={t('reports.dateSort')}
+                  >
+                    <Button
+                      type="button"
+                      variant={dateOrder === 'desc' ? 'default' : 'ghost'}
+                      size="sm"
+                      className="h-9 shrink-0 px-3 text-xs sm:text-sm"
+                      onClick={() => setDateOrder('desc')}
+                    >
+                      {t('reports.dateSortDesc')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={dateOrder === 'asc' ? 'default' : 'ghost'}
+                      size="sm"
+                      className="h-9 shrink-0 px-3 text-xs sm:text-sm"
+                      onClick={() => setDateOrder('asc')}
+                    >
+                      {t('reports.dateSortAsc')}
+                    </Button>
+                  </div>
+                </div>
+                <Button type="button" className="h-10" onClick={loadSessions} disabled={loading}>
+                  {loading ? t('reports.loading') : t('reports.loadSessions')}
                 </Button>
-              )}
+                {(from.trim() || to.trim() || locationIds.length > 0 || chargerIds.length > 0 || connectorIds.length > 0 || energyMin.trim() || energyMax.trim()) && (
+                  <Button type="button" variant="outline" className="h-10" onClick={clearSessionFilters}>
+                    Clear filters
+                  </Button>
+                )}
+              </div>
             </div>
 
             {sessionError && <p className="text-sm text-destructive py-2">{sessionError}</p>}
@@ -582,20 +659,20 @@ export default function Reports() {
                   <table className="w-full text-sm min-w-[600px]">
                     <thead>
                       <tr className="border-b border-border">
-                        <th className="text-left py-2 font-medium">Start Date/Time</th>
-                        <th className="text-left py-2 font-medium">Session ID</th>
-                        <th className="text-left py-2 font-medium">Location</th>
-                        <th className="text-left py-2 font-medium">Charger</th>
-                        <th className="text-left py-2 font-medium">Connector</th>
-                        <th className="text-right py-2 font-medium">Energy (KWH)</th>
-                        <th className="text-right py-2 font-medium pr-6">Amount (JOD)</th>
-                        <th className="text-left py-2 font-medium pl-4 min-w-[120px]">mobile</th>
+                        <th className="text-left py-2 font-semibold text-foreground">Start Date/Time</th>
+                        <th className="text-left py-2 font-semibold text-foreground">Session ID</th>
+                        <th className="text-left py-2 font-semibold text-foreground">Location</th>
+                        <th className="text-left py-2 font-semibold text-foreground">Charger</th>
+                        <th className="text-left py-2 font-semibold text-foreground">Connector</th>
+                        <th className="text-right py-2 font-semibold text-foreground">Energy (KWH)</th>
+                        <th className="text-right py-2 font-semibold text-foreground pr-6">Amount (JOD)</th>
+                        <th className="text-left py-2 font-semibold text-foreground pl-4 min-w-[120px]">mobile</th>
                       </tr>
                     </thead>
                     <tbody>
                       {paginatedSessions.map((r, i) => (
                         <tr key={i} className="border-b border-border/50">
-                          <td className="py-2">{formatDateTime24(r['Start Date/Time'])}</td>
+                          <td className="py-2">{formatMysqlWallClock24h(r['Start Date/Time'])}</td>
                           <td className="py-2">{String(r['Session ID'] ?? '—')}</td>
                           <td className="py-2">{String(r.Location ?? '—')}</td>
                           <td className="py-2">{chargerIdToName.get(String(r.Charger ?? '').trim()) ?? r.Charger ?? '—'}</td>
@@ -626,7 +703,7 @@ export default function Reports() {
 
       {/* Charger comparison — one white block, all connected */}
       {tab === 'chargers' && (
-        <Card className="border border-border bg-white rounded-xl shadow-sm overflow-hidden">
+        <Card className="border border-border bg-card rounded-xl shadow-sm overflow-hidden">
           <CardContent className="p-6 space-y-6">
             <div>
               <h2 className="text-xl font-semibold tracking-tight text-foreground">{t('reports.chargerComparison')}</h2>
@@ -635,7 +712,7 @@ export default function Reports() {
 
             {/* Input cards: CHARGER A / CHARGER B — white, light border, connected */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card className="border border-primary/30 bg-white rounded-xl shadow-none">
+              <Card className="border border-primary/30 bg-card rounded-xl shadow-none">
                 <CardContent className="pt-5 pb-5 space-y-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-primary">{t('reports.chargerA')}</p>
                 <div className="space-y-3">
@@ -660,7 +737,7 @@ export default function Reports() {
                 </div>
               </CardContent>
             </Card>
-            <Card className="border border-primary/30 bg-white rounded-xl shadow-none">
+            <Card className="border border-primary/30 bg-card rounded-xl shadow-none">
               <CardContent className="pt-5 pb-5 space-y-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-primary">{t('reports.chargerB')}</p>
                 <div className="space-y-3">
@@ -706,7 +783,7 @@ export default function Reports() {
                   {bestCharger === 'A' ? 'Charger A — Best performer' : 'Charger B — Best performer'}
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <Card className="border border-primary/30 bg-white rounded-xl shadow-none overflow-hidden">
+                  <Card className="border border-primary/30 bg-card rounded-xl shadow-none overflow-hidden">
                   <CardContent className="pt-5 pb-5">
                     <div className="flex items-start justify-between gap-2 mb-4">
                       <div>
@@ -736,7 +813,7 @@ export default function Reports() {
                     </div>
                   </CardContent>
                 </Card>
-                <Card className="border border-primary/30 bg-white rounded-xl shadow-none overflow-hidden">
+                <Card className="border border-primary/30 bg-card rounded-xl shadow-none overflow-hidden">
                   <CardContent className="pt-5 pb-5">
                     <div className="flex items-start justify-between gap-2 mb-4">
                       <div>
@@ -775,7 +852,7 @@ export default function Reports() {
 
       {/* Connector comparison — same design as Charger: one white block, A vs B only, no table */}
       {tab === 'connectors' && (
-        <Card className="border border-border bg-white rounded-xl shadow-sm overflow-hidden">
+        <Card className="border border-border bg-card rounded-xl shadow-sm overflow-hidden">
           <CardContent className="p-6 space-y-6">
             <div>
               <h2 className="text-xl font-semibold tracking-tight text-foreground">{t('reports.connectorComparison')}</h2>
@@ -784,7 +861,7 @@ export default function Reports() {
 
             {/* Input cards: CONNECTOR A / CONNECTOR B — white, light border, connected */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card className="border border-primary/30 bg-white rounded-xl shadow-none">
+              <Card className="border border-primary/30 bg-card rounded-xl shadow-none">
                 <CardContent className="pt-5 pb-5 space-y-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-primary">{t('reports.connectorA')}</p>
                   <div className="space-y-3">
@@ -813,7 +890,7 @@ export default function Reports() {
                   </div>
                 </CardContent>
               </Card>
-              <Card className="border border-primary/30 bg-white rounded-xl shadow-none">
+              <Card className="border border-primary/30 bg-card rounded-xl shadow-none">
                 <CardContent className="pt-5 pb-5 space-y-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-primary">{t('reports.connectorB')}</p>
                   <div className="space-y-3">
@@ -863,7 +940,7 @@ export default function Reports() {
                   {bestConnector === 'A' ? 'Connector A — Best performer' : 'Connector B — Best performer'}
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <Card className="border border-primary/30 bg-white rounded-xl shadow-none overflow-hidden">
+                  <Card className="border border-primary/30 bg-card rounded-xl shadow-none overflow-hidden">
                     <CardContent className="pt-5 pb-5">
                       <div className="flex items-start justify-between gap-2 mb-4">
                         <div>
@@ -900,7 +977,7 @@ export default function Reports() {
                       </div>
                     </CardContent>
                   </Card>
-                  <Card className="border border-primary/30 bg-white rounded-xl shadow-none overflow-hidden">
+                  <Card className="border border-primary/30 bg-card rounded-xl shadow-none overflow-hidden">
                     <CardContent className="pt-5 pb-5">
                       <div className="flex items-start justify-between gap-2 mb-4">
                         <div>

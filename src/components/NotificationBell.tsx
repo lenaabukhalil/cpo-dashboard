@@ -226,9 +226,9 @@ export default function NotificationBell() {
       )}
 
       <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
-        <SheetContent side="right" className="w-full sm:max-w-md flex flex-col">
+        <SheetContent side="right" className="w-full sm:max-w-md flex flex-col bg-card text-card-foreground border-border">
           <SheetHeader>
-            <SheetTitle>{getLabel('header.notificationHistory', locale)}</SheetTitle>
+            <SheetTitle className="text-foreground">{getLabel('header.notificationHistory', locale)}</SheetTitle>
             <Button variant="outline" size="sm" className="mt-2 w-fit" onClick={fetchHistory} disabled={historyLoading}>
               {historyLoading ? '…' : getLabel('header.refresh', locale)}
             </Button>

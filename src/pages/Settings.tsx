@@ -6,7 +6,6 @@ import { Label } from '../components/ui/label'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from '../context/LanguageContext'
 import { getOrg, updateOrg, type Org } from '../services/api'
-import Profile from './Profile'
 
 /** Normalize for dirty comparison: trim and treat empty string consistently */
 function normalizedLogoUrl(value: string): string {
@@ -93,14 +92,6 @@ export default function Settings() {
         <h1 className="text-2xl font-bold tracking-tight text-foreground">{t('settings.title')}</h1>
         <p className="text-sm text-muted-foreground mt-1">{t('settings.subtitle')}</p>
       </div>
-
-      {/* Profile section – shown inside Settings */}
-      <section aria-labelledby="settings-profile-heading">
-        <h2 id="settings-profile-heading" className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-          {t('settings.profile')}
-        </h2>
-        <Profile embedded />
-      </section>
 
       {/* Organization logo – only for users with an organization */}
       {user?.organization_id != null && (

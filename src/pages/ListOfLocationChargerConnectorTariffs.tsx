@@ -12,6 +12,8 @@ import {
   type Charger,
   type Connector,
   type Tariff,
+  type ConnectorStatusRow,
+  type ConnectorsStatusSummary,
 } from '../services/api'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input'
@@ -32,6 +34,112 @@ function useListTabs(): { id: (typeof TAB_IDS)[number]; labelKey: string }[] {
 }
 
 type TabId = (typeof TAB_IDS)[number]
+
+/** Same rule as Dashboard overview (connectors-status `chargerStatus`): online only when status is exactly `online`. */
+function isChargerOnlineLikeDashboard(status: unknown): boolean {
+  return String(status ?? '').toLowerCase().trim() === 'online'
+}
+
+/** Normalize `chargerStatus` from `/api/v4/cpo/connectors-status` rows (same as CPO Response node). */
+function chargerStatusFromConnectorStatusRow(row: Record<string, unknown>): string {
+  const key = Object.keys(row || {}).find((k) => k.toLowerCase().replace(/_/g, '') === 'chargerstatus')
+  return String((key ? row[key] : row.chargerStatus ?? row.charger_status) ?? '').trim()
+}
+
+/** MySQL/node-red often returns lowercase keys (`connectorid`) — match any casing / underscores. */
+function normFieldKey(k: string): string {
+  return k.toLowerCase().replace(/_/g, '')
+}
+
+function fieldFromConnectorStatusRow(row: Record<string, unknown>, ...hints: string[]): unknown {
+  const wanted = new Set(hints.map(normFieldKey))
+  const hit = Object.keys(row).find((k) => wanted.has(normFieldKey(k)))
+  return hit != null ? row[hit] : undefined
+}
+
+function finiteIdFromStatusRow(row: Record<string, unknown>, ...hints: string[]): number | null {
+  const v = fieldFromConnectorStatusRow(row, ...hints)
+  if (v == null || v === '') return null
+  const n = typeof v === 'number' ? v : Number(String(v).trim())
+  return Number.isFinite(n) ? n : null
+}
+
+function buildChargerStatusByChargerId(statusList: ConnectorStatusRow[]): Record<number, string> {
+  const out: Record<number, string> = {}
+  for (const raw of statusList) {
+    const row = raw as unknown as Record<string, unknown>
+    const n = finiteIdFromStatusRow(row, 'chargerId', 'charger_id')
+    if (n == null) continue
+    const cs = chargerStatusFromConnectorStatusRow(row)
+    if (cs !== '') out[n] = cs
+  }
+  return out
+}
+
+function connectorLiveStatusFromRow(row: Record<string, unknown>): string {
+  const st = fieldFromConnectorStatusRow(row, 'status')
+  return String(st ?? '').trim()
+}
+
+/** One table row built only from `/api/v4/cpo/connectors-status` (same source as `summary` — no catalog merge). */
+function connectorRowFromCpoStatusRow(row: Record<string, unknown>): ConnectorRow | null {
+  const chargerId = finiteIdFromStatusRow(row, 'chargerId', 'charger_id')
+  const connectorId = finiteIdFromStatusRow(row, 'connectorId', 'connector_id')
+  if (chargerId == null || connectorId == null) return null
+  const connectorType = String(fieldFromConnectorStatusRow(row, 'connectorType', 'connector_type') ?? '').trim()
+  const status = connectorLiveStatusFromRow(row)
+  const locationName = String(fieldFromConnectorStatusRow(row, 'locationName', 'location_name') ?? '').trim()
+  const chargerName = String(fieldFromConnectorStatusRow(row, 'chargerName', 'charger_name') ?? '').trim()
+  const organizationName = String(fieldFromConnectorStatusRow(row, 'organizationName', 'organization_name') ?? '').trim()
+  return {
+    locationName,
+    chargerName,
+    chargerId,
+    ...(organizationName ? { organizationName } : {}),
+    connector: {
+      id: connectorId,
+      chargerId,
+      type: connectorType,
+      status,
+    },
+  }
+}
+
+function connectorRowsFromCpoStatusList(statusList: ConnectorStatusRow[]): ConnectorRow[] {
+  const out: ConnectorRow[] = []
+  for (const raw of statusList) {
+    const r = connectorRowFromCpoStatusRow(raw as unknown as Record<string, unknown>)
+    if (r) out.push(r)
+  }
+  return out
+}
+
+/** Fallback when connectors-status list is unavailable: merge catalog rows with live status map. */
+function mergeConnectorCatalogWithStatus(flat: ConnectorRow[], statusList: ConnectorStatusRow[]): ConnectorRow[] {
+  const statusMap = new Map<string, string>()
+  for (const s of statusList) {
+    const row = s as unknown as Record<string, unknown>
+    const cid = finiteIdFromStatusRow(row, 'chargerId', 'charger_id')
+    const connId = finiteIdFromStatusRow(row, 'connectorId', 'connector_id')
+    if (cid != null && connId != null) {
+      statusMap.set(`${cid}-${connId}`, connectorLiveStatusFromRow(row))
+    }
+  }
+  return flat.map((r) => {
+    const connRec = r.connector as unknown as Record<string, unknown>
+    const connId =
+      finiteIdFromStatusRow(connRec, 'id', 'connectorId', 'connector_id') ?? (Number.isFinite(Number(r.connector.id)) ? Number(r.connector.id) : null)
+    const chId =
+      finiteIdFromStatusRow({ chargerId: r.chargerId } as Record<string, unknown>, 'chargerId', 'charger_id') ??
+      (Number.isFinite(Number(r.chargerId)) ? Number(r.chargerId) : null)
+    if (chId == null || connId == null) return r
+    const liveStatus = statusMap.get(`${chId}-${connId}`)
+    if (liveStatus !== undefined && liveStatus !== '') {
+      return { ...r, connector: { ...r.connector, status: liveStatus } }
+    }
+    return r
+  })
+}
 
 function availabilityLabel(v: string, t: (k: string) => string): string {
   if (v === 'available') return t('list.available')
@@ -101,10 +209,25 @@ function getChargerTimeRaw(c: Charger): string | number | null | undefined {
 interface ChargerRow extends Charger {
   locationName: string
 }
+
+/** Prefer CPO connectors-status `chargerStatus`; fallback to GET /charger `status` if row missing. */
+function effectiveChargerStatusForList(
+  c: ChargerRow,
+  chargerStatusByChargerId: Record<number, string>
+): string {
+  const id = c.id
+  if (id != null && chargerStatusByChargerId[id] !== undefined) {
+    return chargerStatusByChargerId[id]
+  }
+  return String(c.status ?? '')
+}
+
 interface ConnectorRow {
   locationName: string
   chargerName: string
   chargerId: number
+  /** From CPO connectors-status when present */
+  organizationName?: string
   connector: Connector
 }
 interface TariffRow {
@@ -125,7 +248,11 @@ export default function ListOfLocationChargerConnectorTariffs() {
   const [activeTab, setActiveTab] = useState<TabId>('location')
   const [locations, setLocations] = useState<LocationType[]>([])
   const [chargerRows, setChargerRows] = useState<ChargerRow[]>([])
+  /** `chargerId` → `chargerStatus` from GET /api/v4/cpo/connectors-status (same source as Dashboard offline/online). */
+  const [chargerStatusByChargerId, setChargerStatusByChargerId] = useState<Record<number, string>>({})
   const [connectorRows, setConnectorRows] = useState<ConnectorRow[]>([])
+  /** Same `summary` as dashboard connectors card (OCPP window functions). */
+  const [connectorsStatusSummary, setConnectorsStatusSummary] = useState<ConnectorsStatusSummary | null>(null)
   const [tariffRows, setTariffRows] = useState<TariffRow[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -142,6 +269,8 @@ export default function ListOfLocationChargerConnectorTariffs() {
   useEffect(() => {
     if (orgId == null) {
       setLoading(false)
+      setChargerStatusByChargerId({})
+      setConnectorsStatusSummary(null)
       return
     }
     setLoading(true)
@@ -163,10 +292,35 @@ export default function ListOfLocationChargerConnectorTariffs() {
         ).then((arrays) => {
           const flat = arrays.flat()
           setChargerRows(flat)
-          return { locList, chargerArrays: arrays }
+          return getConnectorsStatus({ skipCache: true })
+            .then((statusRes) => {
+              const statusList = Array.isArray(statusRes.data) ? statusRes.data : []
+              const summ = statusRes.summary
+              if (
+                summ &&
+                Number.isFinite(Number(summ.totalConnectors)) &&
+                Number.isFinite(Number(summ.availableCount)) &&
+                Number.isFinite(Number(summ.busyCount))
+              ) {
+                setConnectorsStatusSummary({
+                  totalConnectors: Number(summ.totalConnectors),
+                  availableCount: Number(summ.availableCount),
+                  busyCount: Number(summ.busyCount),
+                })
+              } else {
+                setConnectorsStatusSummary(null)
+              }
+              setChargerStatusByChargerId(buildChargerStatusByChargerId(statusList))
+              return { locList, statusList }
+            })
+            .catch(() => {
+              setChargerStatusByChargerId({})
+              setConnectorsStatusSummary(null)
+              return { locList, statusList: [] as ConnectorStatusRow[] }
+            })
         })
       })
-      .then(({ locList }) => {
+      .then(({ locList, statusList }: { locList: LocationType[]; statusList: ConnectorStatusRow[] }) => {
         return Promise.all(
           locList.map((loc: LocationType) =>
             getChargers(loc.location_id).then((chRes) => {
@@ -188,30 +342,14 @@ export default function ListOfLocationChargerConnectorTariffs() {
               ).then((rows) => rows.flat())
             })
           )
-        ).then(async (arrays) => {
+        ).then((arrays) => {
           const flat = (arrays ?? []).flat()
-          // Use same status source as Monitor so table matches sessions view
-          try {
-            const statusRes = await getConnectorsStatus({ skipCache: true })
-            const statusList = (statusRes as { data?: { chargerId?: number; connectorId?: number; status?: string }[] }).data ?? []
-            const statusMap = new Map<string, string>()
-            statusList.forEach((s) => {
-              const cid = s.chargerId ?? (s as Record<string, unknown>).charger_id
-              const connId = s.connectorId ?? (s as Record<string, unknown>).connector_id
-              if (cid != null && connId != null) statusMap.set(`${cid}-${connId}`, (s.status ?? '').trim())
-            })
-            const merged = flat.map((r) => {
-              const liveStatus = statusMap.get(`${r.chargerId}-${r.connector.id}`)
-              if (liveStatus !== undefined && liveStatus !== '') {
-                return { ...r, connector: { ...r.connector, status: liveStatus } }
-              }
-              return r
-            })
-            setConnectorRows(merged)
-          } catch {
-            setConnectorRows(flat)
-          }
-          return flat
+          const merged =
+            statusList.length > 0
+              ? connectorRowsFromCpoStatusList(statusList)
+              : mergeConnectorCatalogWithStatus(flat, statusList)
+          setConnectorRows(merged)
+          return merged
         })
       })
       .then((connRows: ConnectorRow[]) => {
@@ -256,10 +394,9 @@ export default function ListOfLocationChargerConnectorTariffs() {
   }, [chargerRows, search])
 
   const chargerOfflineList = useMemo(() => {
-    const base = chargerRows.filter((c) => {
-      const s = (c.status ?? '').toLowerCase()
-      return s !== 'online' && s !== 'available'
-    })
+    const base = chargerRows.filter(
+      (c) => !isChargerOnlineLikeDashboard(effectiveChargerStatusForList(c, chargerStatusByChargerId))
+    )
     if (!chargerOfflineSearch.trim()) return base
     const q = chargerOfflineSearch.toLowerCase()
     return base.filter(
@@ -267,13 +404,12 @@ export default function ListOfLocationChargerConnectorTariffs() {
         (c.name ?? '').toLowerCase().includes(q) ||
         String(c.chargerID ?? c.id).toLowerCase().includes(q)
     )
-  }, [chargerRows, chargerOfflineSearch])
+  }, [chargerRows, chargerOfflineSearch, chargerStatusByChargerId])
 
   const chargerOnlineList = useMemo(() => {
-    const base = chargerRows.filter((c) => {
-      const s = (c.status ?? '').toLowerCase()
-      return s === 'online' || s === 'available'
-    })
+    const base = chargerRows.filter((c) =>
+      isChargerOnlineLikeDashboard(effectiveChargerStatusForList(c, chargerStatusByChargerId))
+    )
     if (!chargerOnlineSearch.trim()) return base
     const q = chargerOnlineSearch.toLowerCase()
     return base.filter(
@@ -281,7 +417,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
         (c.name ?? '').toLowerCase().includes(q) ||
         String(c.chargerID ?? c.id).toLowerCase().includes(q)
     )
-  }, [chargerRows, chargerOnlineSearch])
+  }, [chargerRows, chargerOnlineSearch, chargerStatusByChargerId])
 
   const paginatedChargerOffline = useMemo(
     () => chargerOfflineList.slice((pageChargerOffline - 1) * perPageChargerOffline, pageChargerOffline * perPageChargerOffline),
@@ -299,6 +435,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
       (r) =>
         r.locationName.toLowerCase().includes(q) ||
         r.chargerName.toLowerCase().includes(q) ||
+        (r.organizationName ?? '').toLowerCase().includes(q) ||
         String(r.connector.id).includes(q) ||
         (r.connector.type ?? '').toLowerCase().includes(q)
     )
@@ -389,12 +526,20 @@ export default function ListOfLocationChargerConnectorTariffs() {
                         ? t('list.searchByOrgLocationChargerConnector')
                         : t('list.searchTariffs')
                   }
-                  className="pl-9 bg-muted/30 border-border rounded-lg"
+                  className="pl-9 bg-background border-border rounded-lg"
                   value={search}
                   onChange={(e) => { setSearch(e.target.value); setPage(1) }}
                 />
               </div>
             </div>
+            {activeTab === 'connector' && connectorsStatusSummary && (
+              <p className="text-xs text-muted-foreground mt-2 font-normal">
+                {t('list.ocppSummaryLine')
+                  .replace('{available}', String(connectorsStatusSummary.availableCount))
+                  .replace('{busy}', String(connectorsStatusSummary.busyCount))
+                  .replace('{total}', String(connectorsStatusSummary.totalConnectors))}
+              </p>
+            )}
           </CardHeader>
         )}
         <CardContent className="space-y-4">
@@ -411,10 +556,10 @@ export default function ListOfLocationChargerConnectorTariffs() {
           ) : (
             <>
               {activeTab === 'location' && (
-                <div className="overflow-x-auto border rounded-lg border-border bg-white table-wrap table-wrapper">
+                <div className="overflow-x-auto border rounded-lg border-border bg-card table-wrap table-wrapper">
                   <table className="w-full text-sm border-collapse min-w-[640px]">
                     <thead>
-                      <tr className="bg-[#f3f4f6] dark:bg-muted/50">
+                      <tr className="bg-muted/40">
                         <th className="text-left py-3 px-4 font-medium text-muted-foreground rtl:text-right">{t('list.name')}</th>
                         <th className="text-left py-3 px-4 font-medium text-muted-foreground rtl:text-right">{t('list.nameAr')}</th>
                         <th className="text-left py-3 px-4 font-medium text-muted-foreground rtl:text-right">{t('list.chargersCount')}</th>
@@ -429,7 +574,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
                           key={loc.location_id}
                           className={cn(
                             'border-t border-border',
-                            i % 2 === 0 ? 'bg-white' : 'bg-muted/20',
+                            i % 2 === 0 ? 'bg-transparent' : 'bg-muted/10',
                             'hover:bg-muted/40'
                           )}
                         >
@@ -450,7 +595,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
 
               {activeTab === 'charger' && (
                 <div className="flex flex-col lg:flex-row gap-6 items-stretch">
-                  <Card className="rounded-2xl border border-border shadow-sm bg-white overflow-hidden flex flex-col flex-1 min-h-0">
+                  <Card className="rounded-2xl border border-border shadow-sm bg-card overflow-hidden flex flex-col flex-1 min-h-0">
                     <CardContent className="p-6 flex flex-col flex-1 min-h-0 flex-grow">
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="h-2.5 w-2.5 rounded-full bg-rose-500 shrink-0" aria-hidden />
@@ -462,12 +607,12 @@ export default function ListOfLocationChargerConnectorTariffs() {
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                         <Input
                           placeholder={t('common.search')}
-                          className="pl-9 bg-muted/30 border-border rounded-lg h-10"
+                          className="pl-9 bg-background border-border rounded-lg h-10"
                           value={chargerOfflineSearch}
                           onChange={(e) => { setChargerOfflineSearch(e.target.value); setPageChargerOffline(1) }}
                         />
                       </div>
-                      <div className="flex-1 flex flex-col min-h-0 border rounded-xl border-border bg-white mt-4 overflow-hidden">
+                      <div className="flex-1 flex flex-col min-h-0 border rounded-xl border-border bg-card mt-4 overflow-hidden">
                         {paginatedChargerOffline.length === 0 ? (
                           <div className="flex-1 flex items-center justify-center min-h-0 p-4">
                             <div className="text-center">
@@ -478,7 +623,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
                         ) : (
                           <div className="flex-1 min-h-0 overflow-auto table-wrapper">
                             <table className="w-full text-sm border-collapse">
-                              <thead className="sticky top-0 bg-[#f3f4f6] dark:bg-muted/50 border-b border-border z-10">
+                              <thead className="sticky top-0 bg-muted/40 border-b border-border z-10">
                                 <tr>
                                   <th className="text-start py-3 px-4 font-medium text-muted-foreground">{t('list.name')}</th>
                                   <th className="text-start py-3 px-4 font-medium text-muted-foreground">{t('list.id')}</th>
@@ -491,7 +636,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
                                     key={c.id}
                                     className={cn(
                                       'border-b border-border/50 last:border-0 transition-colors',
-                                      i % 2 === 0 ? 'bg-white' : 'bg-muted/20',
+                                      i % 2 === 0 ? 'bg-transparent' : 'bg-muted/10',
                                       'hover:bg-muted/30'
                                     )}
                                   >
@@ -516,7 +661,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
                       </div>
                     </CardContent>
                   </Card>
-                  <Card className="rounded-2xl border border-border shadow-sm bg-white overflow-hidden flex flex-col flex-1 min-h-0">
+                  <Card className="rounded-2xl border border-border shadow-sm bg-card overflow-hidden flex flex-col flex-1 min-h-0">
                     <CardContent className="p-6 flex flex-col flex-1 min-h-0 flex-grow">
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 shrink-0" aria-hidden />
@@ -528,12 +673,12 @@ export default function ListOfLocationChargerConnectorTariffs() {
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                         <Input
                           placeholder={t('common.search')}
-                          className="pl-9 bg-muted/30 border-border rounded-lg h-10"
+                          className="pl-9 bg-background border-border rounded-lg h-10"
                           value={chargerOnlineSearch}
                           onChange={(e) => { setChargerOnlineSearch(e.target.value); setPageChargerOnline(1) }}
                         />
                       </div>
-                      <div className="flex-1 flex flex-col min-h-0 border rounded-xl border-border bg-white mt-4 overflow-hidden">
+                      <div className="flex-1 flex flex-col min-h-0 border rounded-xl border-border bg-card mt-4 overflow-hidden">
                         {paginatedChargerOnline.length === 0 ? (
                           <div className="flex-1 flex items-center justify-center min-h-0 p-4">
                             <div className="text-center">
@@ -544,7 +689,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
                         ) : (
                           <div className="flex-1 min-h-0 overflow-auto table-wrapper">
                             <table className="w-full text-sm border-collapse">
-                              <thead className="sticky top-0 bg-[#f3f4f6] dark:bg-muted/50 border-b border-border z-10">
+                              <thead className="sticky top-0 bg-muted/40 border-b border-border z-10">
                                 <tr>
                                   <th className="text-start py-3 px-4 font-medium text-muted-foreground">{t('list.name')}</th>
                                   <th className="text-start py-3 px-4 font-medium text-muted-foreground">{t('list.id')}</th>
@@ -557,7 +702,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
                                     key={c.id}
                                     className={cn(
                                       'border-b border-border/50 last:border-0 transition-colors',
-                                      i % 2 === 0 ? 'bg-white' : 'bg-muted/20',
+                                      i % 2 === 0 ? 'bg-transparent' : 'bg-muted/10',
                                       'hover:bg-muted/30'
                                     )}
                                   >
@@ -586,10 +731,10 @@ export default function ListOfLocationChargerConnectorTariffs() {
               )}
 
               {activeTab === 'connector' && (
-                <div className="overflow-x-auto border rounded-lg border-border bg-white table-wrap table-wrapper">
+                <div className="overflow-x-auto border rounded-lg border-border bg-card table-wrap table-wrapper">
                   <table className="w-full text-sm border-collapse min-w-[640px]">
                     <thead>
-                      <tr className="bg-[#f3f4f6] dark:bg-muted/50">
+                      <tr className="bg-muted/40">
                         <th className="text-left py-3 px-4 font-medium text-muted-foreground rtl:text-right">{t('list.organization')}</th>
                         <th className="text-left py-3 px-4 font-medium text-muted-foreground rtl:text-right">{t('list.location')}</th>
                         <th className="text-left py-3 px-4 font-medium text-muted-foreground rtl:text-right">{t('list.charger')}</th>
@@ -604,11 +749,11 @@ export default function ListOfLocationChargerConnectorTariffs() {
                           key={`${r.chargerId}-${r.connector.id}`}
                           className={cn(
                             'border-t border-border',
-                            i % 2 === 0 ? 'bg-white' : 'bg-muted/20',
+                            i % 2 === 0 ? 'bg-transparent' : 'bg-muted/10',
                             'hover:bg-muted/40'
                           )}
                         >
-                          <td className="py-3 px-4 text-muted-foreground">CPO</td>
+                          <td className="py-3 px-4 text-muted-foreground">{r.organizationName ?? '—'}</td>
                           <td className="py-3 px-4">{r.locationName}</td>
                           <td className="py-3 px-4">{r.chargerName}</td>
                           <td className="py-3 px-4 font-medium">{r.connector.id}</td>
@@ -624,10 +769,10 @@ export default function ListOfLocationChargerConnectorTariffs() {
               )}
 
               {activeTab === 'tariff' && (
-                <div className="overflow-x-auto border rounded-lg border-border bg-white table-wrap table-wrapper">
+                <div className="overflow-x-auto border rounded-lg border-border bg-card table-wrap table-wrapper">
                   <table className="w-full text-sm border-collapse min-w-[640px]">
                     <thead>
-                      <tr className="bg-[#f3f4f6] dark:bg-muted/50">
+                      <tr className="bg-muted/40">
                         <th className="text-left py-3 px-4 font-medium text-muted-foreground rtl:text-right">{t('list.location')}</th>
                         <th className="text-left py-3 px-4 font-medium text-muted-foreground rtl:text-right">{t('list.charger')}</th>
                         <th className="text-left py-3 px-4 font-medium text-muted-foreground rtl:text-right">{t('list.connectorId')}</th>
@@ -643,7 +788,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
                           key={`${r.connectorId}-${r.tariff.tariff_id}`}
                           className={cn(
                             'border-t border-border',
-                            i % 2 === 0 ? 'bg-white' : 'bg-muted/20',
+                            i % 2 === 0 ? 'bg-transparent' : 'bg-muted/10',
                             'hover:bg-muted/40'
                           )}
                         >

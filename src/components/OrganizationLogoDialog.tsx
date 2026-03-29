@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { X } from 'lucide-react'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
@@ -7,7 +8,7 @@ import { cn } from '../lib/utils'
 import { updateOrg } from '../services/api'
 import { isValidLogoUrl } from './ChangeLogoModal'
 
-type PreviewState = 'idle' | 'loading' | 'loaded' | 'error'
+type PreviewState = 'empty' | 'invalid-url' | 'loading' | 'loaded' | 'load-error'
 
 export type OrganizationLogoDialogProps = {
   open: boolean
@@ -26,37 +27,46 @@ export default function OrganizationLogoDialog({
 }: OrganizationLogoDialogProps) {
   const [urlInput, setUrlInput] = useState('')
   const [saving, setSaving] = useState(false)
-  const [previewState, setPreviewState] = useState<PreviewState>('idle')
+  const [previewState, setPreviewState] = useState<PreviewState>('empty')
   const [errorMessage, setErrorMessage] = useState('')
+
+  const previewUrl = urlInput.trim()
+  const urlLooksValid = previewUrl.length > 0 && isValidLogoUrl(previewUrl)
 
   useEffect(() => {
     if (!open) return
     const url = currentLogoUrl?.trim() || ''
     setUrlInput(url)
-    setPreviewState(url && isValidLogoUrl(url) ? 'loading' : 'idle')
     setErrorMessage('')
     setSaving(false)
+    if (!url) {
+      setPreviewState('empty')
+    } else if (!isValidLogoUrl(url)) {
+      setPreviewState('invalid-url')
+    } else {
+      setPreviewState('loading')
+    }
   }, [open, currentLogoUrl])
-
-  const previewUrl = useMemo(() => urlInput.trim(), [urlInput])
-  const showPreview = previewUrl.length > 0
-
-  const handlePreviewLoad = () => setPreviewState('loaded')
-  const handlePreviewError = () => setPreviewState('error')
 
   const handleUrlChange = (value: string) => {
     setUrlInput(value)
     setErrorMessage('')
-    if (!value.trim()) {
-      setPreviewState('idle')
+    const t = value.trim()
+    if (!t) {
+      setPreviewState('empty')
       return
     }
-    if (!isValidLogoUrl(value.trim())) {
-      setPreviewState('error')
+    if (!isValidLogoUrl(t)) {
+      setPreviewState('invalid-url')
       return
     }
     setPreviewState('loading')
   }
+
+  const clearUrl = () => handleUrlChange('')
+
+  const handlePreviewLoad = () => setPreviewState('loaded')
+  const handlePreviewError = () => setPreviewState('load-error')
 
   const handleSave = async () => {
     setErrorMessage('')
@@ -92,39 +102,79 @@ export default function OrganizationLogoDialog({
         <div className="grid gap-4 py-2">
           <div className="grid gap-2">
             <Label htmlFor="org-logo-url">Organization logo URL</Label>
-            <Input
-              id="org-logo-url"
-              type="url"
-              dir="ltr"
-              placeholder="https://..."
-              value={urlInput}
-              onChange={(e) => handleUrlChange(e.target.value)}
-              disabled={saving}
-              className={cn('truncate')}
-            />
+            <div className="relative">
+              <Input
+                id="org-logo-url"
+                type="url"
+                dir="ltr"
+                placeholder="https://example.com/logo.png"
+                value={urlInput}
+                onChange={(e) => handleUrlChange(e.target.value)}
+                disabled={saving}
+                aria-describedby="org-logo-url-hint"
+                className={cn('truncate', urlInput.trim() ? 'pr-10' : 'pr-3')}
+              />
+              {urlInput.trim().length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearUrl}
+                  disabled={saving}
+                  className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
+                  aria-label="Clear URL"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            <p id="org-logo-url-hint" className="text-xs text-muted-foreground">
+              Enter a direct image URL (PNG, JPG, SVG)
+            </p>
           </div>
 
-          {showPreview && (
-            <div className="grid gap-2">
-              <span className="text-sm font-medium">Preview</span>
-              <div className="flex h-24 w-full items-center justify-center rounded-lg border border-border bg-muted/30">
-                <img src={previewUrl} alt="" className="sr-only" onLoad={handlePreviewLoad} onError={handlePreviewError} />
+          <div className="grid gap-2">
+            <span className="text-sm font-medium">Preview</span>
+            <div
+              className={cn(
+                'flex min-h-[200px] w-full flex-col items-center justify-center rounded-lg border-2 border-dashed border-border bg-muted/20 px-4 py-6'
+              )}
+            >
+              {previewState === 'empty' && (
+                <span className="text-sm text-muted-foreground">Logo preview</span>
+              )}
 
-                {previewState === 'loading' && (
-                  <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary" />
-                    <span className="text-xs">Loading…</span>
-                  </div>
-                )}
-                {previewState === 'loaded' && <img src={previewUrl} alt="Logo preview" className="max-h-20 max-w-full object-contain" />}
-                {previewState === 'error' && (
-                  <span className="text-xs text-destructive">
-                    {previewUrl && !isValidLogoUrl(previewUrl) ? 'URL must be http:// or https://' : 'Image failed to load'}
-                  </span>
-                )}
-              </div>
+              {previewState === 'invalid-url' && (
+                <span className="text-center text-sm text-muted-foreground">
+                  URL must start with http:// or https://
+                </span>
+              )}
+
+              {urlLooksValid && previewState === 'load-error' && (
+                <span className="text-sm text-destructive">Invalid image URL</span>
+              )}
+
+              {urlLooksValid && previewState !== 'load-error' && (
+                <>
+                  {previewState === 'loading' && (
+                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                      <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary" />
+                      <span className="text-xs">Loading…</span>
+                    </div>
+                  )}
+                  <img
+                    key={previewUrl}
+                    src={previewUrl}
+                    alt="Logo preview"
+                    onLoad={handlePreviewLoad}
+                    onError={handlePreviewError}
+                    className={cn(
+                      'max-h-[180px] max-w-full object-contain',
+                      previewState === 'loading' && 'sr-only'
+                    )}
+                  />
+                </>
+              )}
             </div>
-          )}
+          </div>
 
           {errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
         </div>
@@ -141,4 +191,3 @@ export default function OrganizationLogoDialog({
     </Dialog>
   )
 }
-

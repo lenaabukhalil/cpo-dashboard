@@ -13,6 +13,7 @@ import {
   type Charger,
   type Connector,
   type ConnectorStatusRow,
+  type ConnectorsStatusSummary,
 } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from '../context/LanguageContext'
@@ -145,13 +146,18 @@ export default function Sessions() {
         }
         const stats = (statsRes as { data?: { chargersOnline?: number } }).data
         const connectors = (connectorsRes as { data?: { chargerId?: number; status?: string }[] }).data ?? []
+        const summary = (connectorsRes as { summary?: ConnectorsStatusSummary }).summary
         const chargersOnline = stats?.chargersOnline ?? 0
         const list = Array.isArray(connectors) ? connectors : []
         setConnectorStatusList(list)
         const uniqueChargers = new Set(list.map((c: { chargerId?: number }) => c.chargerId).filter(Boolean)).size
         const totalChargers = uniqueChargers > 0 ? uniqueChargers : chargersOnline
-        const totalConnectors = list.length
-        const availableConnector = list.filter((c: { status?: string }) => (c.status || '').toLowerCase() === 'available').length
+        const totalConnectors =
+          summary != null && Number.isFinite(summary.totalConnectors) ? summary.totalConnectors : list.length
+        const availableConnector =
+          summary != null && Number.isFinite(summary.availableCount)
+            ? summary.availableCount
+            : list.filter((c: { status?: string }) => (c.status || '').toLowerCase() === 'available').length
         // Busy/preparing: not counted as available or as online; separate card and distinct badge style
         const busyPreparingStatuses = ['busy', 'preparing', 'charging', 'suspended', 'reserved', 'finishing']
         const busyPreparingConnector = list.filter((c: { status?: string }) =>
