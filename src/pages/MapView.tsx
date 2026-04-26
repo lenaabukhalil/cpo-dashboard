@@ -9,7 +9,6 @@ import type { Location } from '../services/api'
 
 const DEFAULT_CENTER: [number, number] = [31.9539, 35.9106]
 const DEFAULT_ZOOM = 12
-const ORG_ZOOM = 18
 
 function chargerStatusColor(status?: string): string {
   const v = (status ?? '').toLowerCase().trim()
@@ -41,11 +40,78 @@ function getChargersFromConnectors(rows: ConnectorStatusRow[]): { chargerId: num
   })
 }
 
-function MapCenter({ center, zoom }: { center: [number, number]; zoom: number }) {
+type ChargerMarker = {
+  chargerId: number
+  chargerName: string
+  chargerStatus: string
+  locationName: string
+  lat: number
+  lng: number
+}
+
+function FitMapToChargers({
+  markers,
+  markerSignature,
+  fallbackCenter,
+  fallbackZoom,
+}: {
+  markers: ChargerMarker[]
+  markerSignature: string
+  fallbackCenter: [number, number]
+  fallbackZoom: number
+}) {
   const map = useMap()
   useEffect(() => {
-    map.setView(center, zoom, { animate: true })
-  }, [map, center[0], center[1], zoom])
+    if (markers.length === 0) {
+      map.setView(fallbackCenter, fallbackZoom, { animate: true })
+      return
+    }
+
+    if (markers.length === 1) {
+      map.setView([markers[0]!.lat, markers[0]!.lng], 14, { animate: true })
+      return
+    }
+
+    const bounds = L.latLngBounds(markers.map((m) => [m.lat, m.lng] as [number, number]))
+    map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 })
+  }, [map, markerSignature, markers, fallbackCenter, fallbackZoom])
+  return null
+}
+
+function HoverScrollWheelZoom() {
+  const map = useMap()
+  useEffect(() => {
+    const container = map.getContainer()
+    if (!container) return
+
+    map.scrollWheelZoom.disable()
+    let isInside = false
+    const enable = () => {
+      if (isInside) return
+      isInside = true
+      map.scrollWheelZoom.enable()
+    }
+    const disable = () => {
+      if (!isInside) return
+      isInside = false
+      map.scrollWheelZoom.disable()
+    }
+
+    // Use native DOM events on the Leaflet container to reliably detect hover over map tiles.
+    container.addEventListener('mouseenter', enable)
+    container.addEventListener('mouseleave', disable)
+    // Pointer events improve reliability on some devices/browsers.
+    container.addEventListener('pointerenter', enable)
+    container.addEventListener('pointerleave', disable)
+
+    return () => {
+      container.removeEventListener('mouseenter', enable)
+      container.removeEventListener('mouseleave', disable)
+      container.removeEventListener('pointerenter', enable)
+      container.removeEventListener('pointerleave', disable)
+      map.scrollWheelZoom.disable()
+    }
+  }, [map])
   return null
 }
 
@@ -109,6 +175,13 @@ export default function MapView() {
       .filter(Boolean) as { chargerId: number; chargerName: string; chargerStatus: string; locationName: string; lat: number; lng: number }[]
   }, [connectorsStatus, locationByName])
 
+  const markerSignature = useMemo(() => {
+    return chargersWithPosition
+      .map((c) => `${c.chargerId}:${c.lat.toFixed(6)}:${c.lng.toFixed(6)}`)
+      .sort()
+      .join('|')
+  }, [chargersWithPosition])
+
   const mapCenter = useMemo((): [number, number] => {
     const withCoords = locations.filter((loc) => {
       const lat = parseFloat(loc.lat ?? '')
@@ -144,7 +217,7 @@ export default function MapView() {
         <div className="min-h-[240px] sm:min-h-[280px] flex-1 w-full min-w-0 max-h-[calc(100dvh-14rem)]">
           <MapContainer
             center={mapCenter}
-            zoom={chargersWithPosition.length ? ORG_ZOOM : DEFAULT_ZOOM}
+            zoom={DEFAULT_ZOOM}
             className="h-full w-full min-h-[200px] max-w-full"
             scrollWheelZoom={false}
             dragging={false}
@@ -153,7 +226,13 @@ export default function MapView() {
             zoomControl={true}
           >
             <MapResizeHandler />
-            <MapCenter center={mapCenter} zoom={chargersWithPosition.length ? ORG_ZOOM : DEFAULT_ZOOM} />
+            <HoverScrollWheelZoom />
+            <FitMapToChargers
+              markers={chargersWithPosition}
+              markerSignature={markerSignature}
+              fallbackCenter={mapCenter}
+              fallbackZoom={DEFAULT_ZOOM}
+            />
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

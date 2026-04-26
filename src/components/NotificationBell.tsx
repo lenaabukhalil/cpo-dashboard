@@ -1,251 +1,201 @@
-import { useEffect, useRef, useState } from 'react'
-import { Bell, History, X } from 'lucide-react'
+import { useState } from 'react'
+import { Bell } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { formatDistanceToNow } from 'date-fns'
 import { useAuth } from '../context/AuthContext'
-import { useLanguage } from '../context/LanguageContext'
+import { useNotifications } from '../contexts/NotificationContext'
 import {
-  getNotifications,
-  markNotificationRead,
-  markAllNotificationsRead,
-  type NotificationItem,
+  fetchChargerNotifications,
+  markNotificationAsReadApi,
+  markNotificationsSeenApi,
 } from '../services/api'
 import { Button } from './ui/button'
 import { HeaderIconButton } from './HeaderIconButton'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from './ui/sheet'
+import { Badge } from './ui/badge'
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
+import { ScrollArea } from './ui/scroll-area'
 import { getLabel } from '../lib/translations'
 import { cn } from '../lib/utils'
-import { formatDateTime } from '../lib/dateFormat'
-
-function formatNotificationTime(ts?: number | string): string {
-  if (ts == null) return '—'
-  const d = new Date(typeof ts === 'number' ? ts : Number(ts))
-  if (Number.isNaN(d.getTime())) return '—'
-  const now = Date.now()
-  const diff = now - d.getTime()
-  if (diff < 60_000) return 'Just now'
-  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`
-  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`
-  return formatDateTime(d)
-}
+import { useLanguage } from '../context/LanguageContext'
 
 export default function NotificationBell() {
   const { user } = useAuth()
+  const { notifications, unreadCount, markAsRead, removeNotification, mergeNotificationsFromApi } =
+    useNotifications()
   const { locale } = useLanguage()
-  const [list, setList] = useState<NotificationItem[]>([])
-  const [loading, setLoading] = useState(false)
-  const [loadError, setLoadError] = useState(false)
   const [open, setOpen] = useState(false)
-  const [historyOpen, setHistoryOpen] = useState(false)
-  const [historyLoading, setHistoryLoading] = useState(false)
-  const panelRef = useRef<HTMLDivElement>(null)
-
-  const organizationId = user?.organization_id ?? (user as { organizationId?: number })?.organizationId
-  const userId = user?.user_id ?? (user as { userId?: number })?.userId
-  const unreadList = list.filter((n) => !n.read)
-  const unreadCount = unreadList.length
+  const userId = user?.user_id
   const badgeLabel = unreadCount > 9 ? '9+' : unreadCount > 0 ? String(unreadCount) : null
 
-  const fetchNotifications = () => {
-    if (organizationId == null) return
-    setLoading(true)
-    setLoadError(false)
-    getNotifications({
-      organizationId: Number(organizationId),
-      userId: userId != null ? Number(userId) : undefined,
+  const loadNotificationsHistory = async () => {
+    try {
+      const { items, unreadCount: serverUnread } = await fetchChargerNotifications({
       since: 0,
+        userId,
     })
-      .then((res) => {
-        const data = (res as { data?: NotificationItem[] }).data
-        setList(Array.isArray(data) ? data : [])
-      })
-      .catch(() => {
-        setList([])
-        setLoadError(true)
-      })
-      .finally(() => setLoading(false))
-  }
-
-  const fetchHistory = () => {
-    if (organizationId == null) return
-    setHistoryLoading(true)
-    getNotifications({
-      organizationId: Number(organizationId),
-      userId: userId != null ? Number(userId) : undefined,
-      since: 0,
-    })
-      .then((res) => {
-        const data = (res as { data?: NotificationItem[] }).data
-        setList(Array.isArray(data) ? data : [])
-      })
-      .catch(() => {})
-      .finally(() => setHistoryLoading(false))
-  }
-
-  useEffect(() => {
-    if (!organizationId) return
-    fetchNotifications()
-    const intervalMs = open || historyOpen ? 15_000 : 60_000
-    const t = setInterval(fetchNotifications, intervalMs)
-    return () => clearInterval(t)
-  }, [organizationId, userId, open, historyOpen])
-
-  useEffect(() => {
-    if (open && organizationId) fetchNotifications()
-  }, [open, organizationId])
-
-  useEffect(() => {
-    if (historyOpen && organizationId) fetchHistory()
-  }, [historyOpen, organizationId])
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) setOpen(false)
+      mergeNotificationsFromApi(items, serverUnread)
+    } catch {
+      // ignore
     }
-    if (open) {
-      document.addEventListener('click', handleClickOutside)
-      return () => document.removeEventListener('click', handleClickOutside)
-    }
-  }, [open])
-
-  const handleMarkRead = (n: NotificationItem) => {
-    if (userId == null || n.read) return
-    markNotificationRead(n.id, userId).then(() => {
-      setList((prev) => prev.map((x) => (x.id === n.id ? { ...x, read: true, readAt: new Date().toISOString() } : x)))
-    })
   }
 
-  const handleDismiss = (e: React.MouseEvent, n: NotificationItem) => {
-    e.stopPropagation()
-    if (userId == null || n.read) return
-    markNotificationRead(n.id, userId).then(() => {
-      setList((prev) => prev.map((x) => (x.id === n.id ? { ...x, read: true, readAt: new Date().toISOString() } : x)))
-    })
-  }
-
-  const handleMarkAllRead = () => {
+  const markAllSeenAndRefresh = async () => {
     if (userId == null) return
-    markAllNotificationsRead(userId).then((res) => {
-      if (res.success) setList((prev) => prev.map((x) => ({ ...x, read: true, readAt: new Date().toISOString() })))
-    })
+    try {
+      const seen = await markNotificationsSeenApi(userId)
+      if (seen.success) mergeNotificationsFromApi([], 0)
+    } catch {
+      // ignore
+    }
+    await loadNotificationsHistory()
   }
 
-  const renderNotificationItem = (n: NotificationItem, _inHistory: boolean) => (
-    <li
-      key={n.id}
-      role="button"
-      tabIndex={0}
-      className={cn(
-        'flex items-start gap-2 px-3 py-2.5 text-left transition-colors hover:bg-muted/60',
-        !n.read && 'bg-primary/5'
-      )}
-      onClick={() => handleMarkRead(n)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          handleMarkRead(n)
-        }
-      }}
-    >
-      <div className="min-w-0 flex-1">
-        <p className="text-sm text-foreground">{n.message ?? 'Notification'}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">{formatNotificationTime(n.timestamp ?? n.createdAt)}</p>
-      </div>
-      <button
-        type="button"
-        onClick={(e) => handleDismiss(e, n)}
-        className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        aria-label="Dismiss and mark as read"
-      >
-        <X className="h-4 w-4" />
-      </button>
-    </li>
-  )
-
-  if (organizationId == null) return null
+  const handleNotificationClick = async (id: string) => {
+    markAsRead(id)
+    if (userId == null) return
+    try {
+      await markNotificationAsReadApi(id, userId)
+      const { items, unreadCount: serverUnread } = await fetchChargerNotifications({
+        since: 0,
+        userId,
+      })
+      mergeNotificationsFromApi(items, serverUnread)
+    } catch {
+      // ignore optimistic update failures
+    }
+  }
 
   return (
     <>
-      <div className="relative flex items-center gap-1" ref={panelRef}>
-        <HeaderIconButton
-          label={getLabel('header.notifications', locale)}
-          icon={<Bell className="h-5 w-5" />}
-          onClick={() => setOpen((o) => !o)}
-          aria-label={badgeLabel ? `${unreadCount} unread notifications` : getLabel('header.notifications', locale)}
-          badge={
-            badgeLabel != null ? (
-              <span
-                className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground"
-                aria-hidden
+      <Popover
+        open={open}
+        onOpenChange={async (nextOpen) => {
+          setOpen(nextOpen)
+          if (!nextOpen || userId == null) return
+          try {
+            const seen = await markNotificationsSeenApi(userId)
+            if (seen.success) mergeNotificationsFromApi([], 0)
+          } catch {
+            // ignore
+          }
+          await loadNotificationsHistory()
+        }}
+      >
+        <PopoverTrigger asChild>
+          <div className="relative">
+            <HeaderIconButton
+              label={getLabel('header.notifications', locale)}
+              icon={<Bell className="h-5 w-5" />}
+              aria-label={
+                badgeLabel != null
+                  ? `${unreadCount} unread notifications`
+                  : getLabel('header.notifications', locale)
+              }
+            />
+            {unreadCount > 0 && (
+              <Badge
+                variant="destructive"
+                className="absolute -top-1 -right-1 h-5 min-w-5 px-1 text-[10px] font-semibold"
               >
                 {badgeLabel}
-              </span>
-            ) : undefined
-          }
-        />
-        <HeaderIconButton
-          label={getLabel('header.history', locale)}
-          icon={<History className="h-5 w-5" />}
-          onClick={() => setHistoryOpen(true)}
-          aria-label={getLabel('header.history', locale)}
-        />
-      </div>
-
-      {open && (
-        <div className="absolute right-0 top-full z-[100] mt-2 w-[320px] overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
-          <div className="flex items-center justify-between border-b border-border bg-muted/50 px-3 py-2">
-            <span className="text-sm font-medium text-foreground">{getLabel('header.notifications', locale)}</span>
-            <div className="flex items-center gap-1">
-              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={fetchNotifications} disabled={loading}>
-                {loading ? '…' : getLabel('header.refresh', locale)}
+              </Badge>
+            )}
+          </div>
+        </PopoverTrigger>
+        <PopoverContent className="w-80 p-0" align="end">
+          <div className="flex items-center justify-between gap-2 border-b p-4">
+            <h3 className="text-sm font-semibold">{getLabel('header.notifications', locale)}</h3>
+            {unreadCount > 0 && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 shrink-0 text-xs"
+                onClick={() => void markAllSeenAndRefresh()}
+              >
+                Mark all as read
               </Button>
-              {unreadCount > 0 && (
-                <Button variant="ghost" size="sm" className="h-7 text-xs text-primary" onClick={handleMarkAllRead}>
-                  Mark all read
-                </Button>
-              )}
-            </div>
+            )}
           </div>
-          <div className="max-h-[360px] overflow-y-auto">
-            {loading && list.length === 0 && !loadError ? (
-              <p className="p-4 text-center text-sm text-muted-foreground">Loading...</p>
-            ) : loadError ? (
-              <div className="p-4 text-center">
-                <p className="text-sm text-muted-foreground">Couldn&apos;t load notifications</p>
-                <Button variant="outline" size="sm" className="mt-2" onClick={fetchNotifications}>
-                  Retry
-                </Button>
+          <ScrollArea className="h-[400px]">
+            {notifications.length === 0 ? (
+              <div className="p-8 text-center text-sm text-muted-foreground">No notifications</div>
+            ) : (
+              <div className="p-2">
+                {notifications.map((notification) => (
+                  <div
+                    key={notification.id}
+                    className={cn(
+                      'mb-1 cursor-pointer rounded-lg border-l-4 p-3 transition-colors hover:bg-muted',
+                      !notification.read && 'border-l-primary bg-muted/30',
+                      notification.read && notification.isNew && 'border-l-primary/25 bg-muted/15',
+                      notification.read && !notification.isNew && 'border-l-transparent opacity-55',
+                    )}
+                    onClick={() => void handleNotificationClick(notification.id)}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-1 flex flex-wrap items-center gap-2">
+                          <p
+                            className={cn(
+                              'truncate text-sm',
+                              !notification.read && 'font-semibold text-foreground',
+                              notification.read && 'font-normal',
+                            )}
+                          >
+                            {notification.title}
+                          </p>
+                          {notification.isNew && (
+                            <span
+                              className={cn(
+                                'shrink-0 text-[10px] font-medium uppercase tracking-wide',
+                                notification.read ? 'text-muted-foreground' : 'text-primary/80',
+                              )}
+                            >
+                              New
+                            </span>
+                          )}
+                        </div>
+                        <p
+                          className={cn(
+                            'line-clamp-2 text-xs',
+                            notification.read ? 'text-muted-foreground' : 'text-foreground/90',
+                          )}
+                        >
+                          {notification.message}
+                        </p>
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          <p className="text-xs text-muted-foreground">
+                            {formatDistanceToNow(notification.timestamp, { addSuffix: true })}
+                          </p>
+                          <Link
+                            to={`/notifications/${encodeURIComponent(notification.id)}`}
+                            className="text-xs text-primary hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            Details
+                          </Link>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 flex-shrink-0"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          removeNotification(notification.id)
+                        }}
+                      >
+                        ×
+                      </Button>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ) : unreadList.length === 0 ? (
-              <p className="p-4 text-center text-sm text-muted-foreground">No unread notifications</p>
-            ) : (
-              <ul className="divide-y divide-border">
-                {unreadList.map((n) => renderNotificationItem(n, false))}
-              </ul>
             )}
-          </div>
-        </div>
-      )}
-
-      <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
-        <SheetContent side="right" className="w-full sm:max-w-md flex flex-col bg-card text-card-foreground border-border">
-          <SheetHeader>
-            <SheetTitle className="text-foreground">{getLabel('header.notificationHistory', locale)}</SheetTitle>
-            <Button variant="outline" size="sm" className="mt-2 w-fit" onClick={fetchHistory} disabled={historyLoading}>
-              {historyLoading ? '…' : getLabel('header.refresh', locale)}
-            </Button>
-          </SheetHeader>
-          <div className="flex-1 overflow-y-auto mt-4">
-            {historyLoading && list.length === 0 ? (
-              <p className="p-4 text-center text-sm text-muted-foreground">Loading...</p>
-            ) : list.length === 0 ? (
-              <p className="p-4 text-center text-sm text-muted-foreground">No notifications</p>
-            ) : (
-              <ul className="divide-y divide-border">
-                {list.map((n) => renderNotificationItem(n, true))}
-              </ul>
-            )}
-          </div>
-        </SheetContent>
-      </Sheet>
+          </ScrollArea>
+        </PopoverContent>
+      </Popover>
     </>
   )
 }

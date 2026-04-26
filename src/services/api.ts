@@ -814,44 +814,146 @@ export interface ConnectorComparisonRow {
 }
 
 // Notifications (organization-scoped: only chargers belonging to the org)
-export interface NotificationItem {
-  id: string
+export interface ChargerNotificationItem {
+  id?: string
   chargerId?: string
+  chargerName?: string
+  organizationName?: string
+  locationName?: string
   online?: boolean
   message?: string
   level?: string
   timestamp?: number
   createdAt?: string
-  read?: boolean
-  readAt?: string | null
+  read?: boolean | number
+  isNew?: boolean | number
 }
+
+export interface FetchChargerNotificationsResult {
+  items: ChargerNotificationItem[]
+  unreadCount?: number
+}
+
+function pickNotificationString(
+  input: Record<string, unknown>,
+  keys: string[],
+): string | undefined {
+  for (const key of keys) {
+    const value = input[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (value != null && typeof value !== 'object') {
+      const asText = String(value).trim()
+      if (asText) return asText
+    }
+  }
+  return undefined
+}
+
+export function normalizeChargerNotificationItem(raw: unknown): ChargerNotificationItem {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const source = raw as Record<string, unknown>
+  const base = { ...(source as unknown as ChargerNotificationItem) }
+  const organizationName = pickNotificationString(source, ['organizationName', 'organization_name'])
+  const locationName = pickNotificationString(source, ['locationName', 'location_name'])
+  const chargerName = pickNotificationString(source, ['chargerName', 'charger_name', 'charger'])
+  const chargerId = pickNotificationString(source, ['chargerId', 'charger_id', 'chargerID'])
+
+  if (organizationName !== undefined) base.organizationName = organizationName
+  if (locationName !== undefined) base.locationName = locationName
+  if (chargerName !== undefined) base.chargerName = chargerName
+  if (chargerId !== undefined) base.chargerId = chargerId
+  return base
+}
+
+export function parseNotificationsResponsePayload(data: unknown): FetchChargerNotificationsResult {
+  if (Array.isArray(data)) {
+    return { items: data.map(normalizeChargerNotificationItem) }
+  }
+  if (data && typeof data === 'object') {
+    const body = data as Record<string, unknown>
+    const rawList = body.data ?? body.notifications
+    const items = Array.isArray(rawList) ? rawList.map(normalizeChargerNotificationItem) : []
+    const uc = body.unreadCount
+    const unreadCount = typeof uc === 'number' && Number.isFinite(uc) ? uc : undefined
+    return { items, unreadCount }
+  }
+  return { items: [] }
+}
+
+export async function fetchChargerNotifications(params?: {
+  since?: number
+  userId?: string | number
+}): Promise<FetchChargerNotificationsResult> {
+  const query: Record<string, string> = {}
+  if (params?.since != null) query.since = String(params.since)
+  if (params?.userId != null && params.userId !== '') query.userId = String(params.userId)
+
+  const res = await request<unknown>('/api/v4/notifications', {
+    params: Object.keys(query).length ? query : undefined,
+    skipCache: true,
+  })
+  return parseNotificationsResponsePayload(res.data)
+}
+
+const NOTIFICATIONS_API_TIMEOUT_MS = 30000
+
+export async function markNotificationAsReadApi(
+  notificationId: string,
+  userId: string | number,
+): Promise<{ success: boolean; message?: string }> {
+  const ac = new AbortController()
+  const timeout = setTimeout(() => ac.abort(), NOTIFICATIONS_API_TIMEOUT_MS)
+  try {
+    const res = await request<{ success?: boolean; message?: string }>('/api/v4/notifications/mark-read', {
+      method: 'POST',
+      body: JSON.stringify({ notificationId, userId: Number(userId) }),
+      signal: ac.signal,
+    })
+    if (!res.success) return { success: false, message: res.message || 'Failed' }
+    return { success: true, message: res.message }
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+export async function markNotificationsSeenApi(
+  userId: string | number,
+): Promise<{ success: boolean; seenAt?: number }> {
+  const ac = new AbortController()
+  const timeout = setTimeout(() => ac.abort(), NOTIFICATIONS_API_TIMEOUT_MS)
+  try {
+    const res = await request<{ success?: boolean; seenAt?: number }>('/api/v4/notifications/mark-seen', {
+      method: 'POST',
+      body: JSON.stringify({ userId: Number(userId) }),
+      signal: ac.signal,
+    })
+    return { success: res.success !== false, seenAt: res.data?.seenAt ?? (res as unknown as { seenAt?: number }).seenAt }
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+// Backward-compatible wrappers for existing pages.
+export type NotificationItem = ChargerNotificationItem
 
 export async function getNotifications(params: {
   organizationId: number
   userId?: number
   since?: number
 }) {
-  const query: Record<string, string> = { organizationId: String(params.organizationId) }
-  if (params.userId != null) query.userId = String(params.userId)
-  if (params.since != null) query.since = String(params.since)
-  return request<{ success: boolean; data: NotificationItem[] }>('/api/v4/notifications', {
-    params: query,
-    skipCache: true,
+  const res = await fetchChargerNotifications({
+    since: params.since,
+    userId: params.userId,
   })
+  return { success: true, data: res.items }
 }
 
 export async function markNotificationRead(notificationId: string, userId: number) {
-  return request<{ success: boolean; message?: string }>('/api/v4/notifications/mark-read', {
-    method: 'POST',
-    body: JSON.stringify({ notificationId, userId }),
-  })
+  return markNotificationAsReadApi(notificationId, userId)
 }
 
 export async function markAllNotificationsRead(userId: number) {
-  return request<{ success: boolean }>('/api/v4/notifications/mark-all-read', {
-    method: 'POST',
-    body: JSON.stringify({ userId }),
-  })
+  return markNotificationsSeenApi(userId)
 }
 
 // Audit Log (administrative changes only: create, update, delete)

@@ -1,0 +1,547 @@
+[
+  {
+    "id": "054c0efa3fe2ebeb",
+    "type": "catch",
+    "z": "253add6a74e2ea05",
+    "name": "Catch errors",
+    "scope": null,
+    "uncaught": true,
+    "x": 5710,
+    "y": 840,
+    "wires": [
+      [
+        "aff00be254b59eb8"
+      ]
+    ]
+  },
+  {
+    "id": "a9b256a1678b2e29",
+    "type": "http response",
+    "z": "253add6a74e2ea05",
+    "name": "HTTP Response",
+    "statusCode": "200",
+    "x": 6680,
+    "y": 580,
+    "wires": []
+  },
+  {
+    "id": "17ac6b4fa6504590",
+    "type": "http in",
+    "z": "253add6a74e2ea05",
+    "name": "GET /api/v4/audit-log",
+    "url": "/api/v4/audit-log",
+    "method": "get",
+    "x": 5690,
+    "y": 540,
+    "wires": [
+      [
+        "a80554e8240c4122"
+      ]
+    ]
+  },
+  {
+    "id": "a80554e8240c4122",
+    "type": "function",
+    "z": "253add6a74e2ea05",
+    "name": "Extract Bearer (audit list)",
+    "func": "const req = msg.req || {};\nconst auth = (req.headers && (req.headers.authorization || req.headers.Authorization)) || '';\nif (!auth || !auth.startsWith('Bearer ')) {\n  msg.statusCode = 401;\n  msg.payload = { success: false, message: 'Missing bearer token' };\n  return [null, msg];\n}\nmsg.token = auth.slice(7).trim();\nreturn [msg, null];",
+    "outputs": 2,
+    "noerr": 0,
+    "x": 5810,
+    "y": 500,
+    "wires": [
+      [
+        "4cb661dea629714a"
+      ],
+      [
+        "87aeb8071e292e52"
+      ]
+    ]
+  },
+  {
+    "id": "4cb661dea629714a",
+    "type": "jwt verify",
+    "z": "253add6a74e2ea05",
+    "name": "JWT Verify (audit-log list)",
+    "alg": [
+      "HS256"
+    ],
+    "jwkurl": "",
+    "secret": "EVSE_DASH_SECRET_2026_!@#_LONG",
+    "key": "",
+    "signvar": "token",
+    "storetoken": "payload",
+    "x": 5970,
+    "y": 540,
+    "wires": [
+      [
+        "c48ef2417efcc8f2"
+      ]
+    ]
+  },
+  {
+    "id": "87aeb8071e292e52",
+    "type": "function",
+    "z": "253add6a74e2ea05",
+    "name": "401 Unauthorized (audit list)",
+    "func": "msg.statusCode = 401;\nmsg.headers = msg.headers || {};\nif (!msg.headers['Content-Type']) msg.headers['Content-Type'] = 'application/json';\nmsg.payload = msg.payload && typeof msg.payload === 'object' ? msg.payload : { success: false, message: 'Unauthorized' };\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "x": 6060,
+    "y": 600,
+    "wires": [
+      [
+        "a9b256a1678b2e29"
+      ]
+    ]
+  },
+  {
+    "id": "c48ef2417efcc8f2",
+    "type": "function",
+    "z": "253add6a74e2ea05",
+    "name": "Build SQL (List + Count)",
+    "func": "var q = (msg.req && msg.req.query) || msg.query || {};\nvar esc = function(s) { return (s || '').replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\"); };\n\nvar organization_id = NaN;\nif (msg.payload && typeof msg.payload === 'object' && msg.payload.organization_id != null)\n  organization_id = parseInt(msg.payload.organization_id, 10);\nif (isNaN(organization_id) || organization_id < 1) {\n  msg.statusCode = 403;\n  msg.headers = { 'Content-Type': 'application/json' };\n  msg.payload = { success: false, message: 'Organization context required' };\n  return [null, null, msg];\n}\n\nvar from = esc(q.from);\nvar to = esc(q.to);\nvar action = (q.action || '').toString().toLowerCase().trim();\nvar entity_type = esc(q.entity_type);\nvar user_id = parseInt(q.user_id, 10);\nvar limit = Math.min(1000, parseInt(q.limit, 10) || 25);\nvar offset = Math.max(0, parseInt(q.offset, 10) || 0);\n\nvar listSql, countSql, whereClause;\n\nif (action === 'notification') {\n  var notifWhere = [\"l.organization_id = \" + organization_id];\n  if (from) notifWhere.push(\"DATE(FROM_UNIXTIME(n.created_at/1000)) >= '\" + from + \"'\");\n  if (to) notifWhere.push(\"DATE(FROM_UNIXTIME(n.created_at/1000)) <= '\" + to + \"'\");\n  whereClause = \" WHERE \" + notifWhere.join(\" AND \");\n  var fromClause = \"ocpp_CSGO.charger_notifications n INNER JOIN ocpp_CSGO.Chargers ch ON ch.charger_id = n.charger_id INNER JOIN ocpp_CSGO.Locations l ON l.location_id = ch.location_id\";\n  listSql = \"SELECT n.id, FROM_UNIXTIME(n.created_at/1000) AS timestamp, NULL AS user_id, l.organization_id, 'notification' AS action, 'notification' AS entity_type, COALESCE(CAST(n.charger_id AS CHAR), CAST(n.id AS CHAR)) AS entity_id, NULL AS old_value, JSON_OBJECT('message', COALESCE(n.message, ''), 'level', COALESCE(n.level, 'info'), 'online', COALESCE(n.online, 0)) AS new_value, NULL AS ip, NULL AS source, NULL AS correlation_id, NULL AS user_name FROM \" + fromClause + whereClause + \" ORDER BY n.created_at DESC LIMIT \" + limit + \" OFFSET \" + offset;\n  countSql = \"SELECT COUNT(*) AS total FROM \" + fromClause + whereClause;\n} else {\n  var where = [\"a.organization_id = \" + organization_id];\n  if (from) where.push(\"DATE(a.timestamp) >= '\" + from + \"'\");\n  if (to) where.push(\"DATE(a.timestamp) <= '\" + to + \"'\");\n  if (action) where.push(\"a.action = '\" + esc(action) + \"'\");\n  if (entity_type) where.push(\"a.entity_type = '\" + entity_type + \"'\");\n  if (!isNaN(user_id)) where.push(\"a.user_id = \" + user_id);\n  whereClause = \" WHERE \" + where.join(\" AND \");\n  listSql = \"SELECT a.id, a.timestamp, a.user_id, a.organization_id, a.action, a.entity_type, a.entity_id, a.old_value, a.new_value, a.ip, a.source, a.correlation_id, CONCAT(IFNULL(u.f_name,''), ' ', IFNULL(u.l_name,'')) AS user_name FROM audit_log a LEFT JOIN Users u ON u.user_id = a.user_id\" + whereClause + \" ORDER BY a.timestamp DESC LIMIT \" + limit + \" OFFSET \" + offset;\n  countSql = \"SELECT COUNT(*) AS total FROM audit_log a\" + whereClause;\n}\n\nvar reqId = Date.now().toString(36) + Math.random().toString(36).substr(2, 9);\nvar msgList = Object.assign({}, msg, { topic: listSql, _requestId: reqId, _part: 'list' });\nvar msgCount = Object.assign({}, msg, { topic: countSql, _requestId: reqId, _part: 'count' });\nreturn [msgList, msgCount, null];",
+    "outputs": 3,
+    "noerr": 0,
+    "x": 6270,
+    "y": 540,
+    "wires": [
+      [
+        "5dc363d1cd50cb58"
+      ],
+      [
+        "bf471a846bfd2841"
+      ],
+      [
+        "a9b256a1678b2e29"
+      ]
+    ]
+  },
+  {
+    "id": "5dc363d1cd50cb58",
+    "type": "mysql",
+    "z": "253add6a74e2ea05",
+    "mydb": "fd63a9e7fe57deda",
+    "name": "Get Audit Logs",
+    "x": 6340,
+    "y": 420,
+    "wires": [
+      [
+        "57e508e079428e98"
+      ]
+    ]
+  },
+  {
+    "id": "bf471a846bfd2841",
+    "type": "mysql",
+    "z": "253add6a74e2ea05",
+    "mydb": "fd63a9e7fe57deda",
+    "name": "Count Audit Logs",
+    "x": 6530,
+    "y": 520,
+    "wires": [
+      [
+        "57e508e079428e98"
+      ]
+    ]
+  },
+  {
+    "id": "57e508e079428e98",
+    "type": "function",
+    "z": "253add6a74e2ea05",
+    "name": "Combine Logs and Count",
+    "func": "var reqId = msg._requestId;\nvar part = msg._part;\nif (!reqId) return null;\n\nif (msg.error) {\n  flow.set('audit_list_' + reqId, null);\n  flow.set('audit_count_' + reqId, null);\n  msg.statusCode = 500;\n  msg.payload = { success: false, message: (msg.error.message || msg.error.toString || 'Database error').toString(), error: msg.error.message || 'Database error' };\n  msg._responseTarget = 'list';\n  msg.headers = msg.headers || {};\n  if (!msg.headers['Content-Type']) msg.headers['Content-Type'] = 'application/json';\n  return msg;\n}\n\nif (part === 'list') flow.set('audit_list_' + reqId, msg.payload);\nif (part === 'count') flow.set('audit_count_' + reqId, (msg.payload && msg.payload[0]) ? msg.payload[0].total : 0);\n\nvar list = flow.get('audit_list_' + reqId);\nvar count = flow.get('audit_count_' + reqId);\n\nif (list !== undefined && count !== undefined) {\n  flow.set('audit_list_' + reqId, null);\n  flow.set('audit_count_' + reqId, null);\n  msg.payload = { success: true, data: Array.isArray(list) ? list : [], total: count };\n  return msg;\n}\nreturn null;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 6590,
+    "y": 440,
+    "wires": [
+      [
+        "a9b256a1678b2e29"
+      ]
+    ]
+  },
+  {
+    "id": "fdfe38bbe3901caa",
+    "type": "function",
+    "z": "253add6a74e2ea05",
+    "name": "Extract Bearer (audit export)",
+    "func": "const req = msg.req || {};\nconst auth = (req.headers && (req.headers.authorization || req.headers.Authorization)) || '';\nif (!auth || !auth.startsWith('Bearer ')) {\n  msg.statusCode = 401;\n  msg.payload = { success: false, message: 'Missing bearer token' };\n  return [null, msg];\n}\nmsg.token = auth.slice(7).trim();\nreturn [msg, null];",
+    "outputs": 2,
+    "noerr": 0,
+    "x": 5800,
+    "y": 620,
+    "wires": [
+      [
+        "ffd86851d712ceb2"
+      ],
+      [
+        "701e95521d10694f"
+      ]
+    ]
+  },
+  {
+    "id": "ffd86851d712ceb2",
+    "type": "jwt verify",
+    "z": "253add6a74e2ea05",
+    "name": "JWT Verify (audit-log export)",
+    "alg": [
+      "HS256"
+    ],
+    "jwkurl": "",
+    "secret": "EVSE_DASH_SECRET_2026_!@#_LONG",
+    "key": "",
+    "signvar": "token",
+    "storetoken": "payload",
+    "x": 5970,
+    "y": 680,
+    "wires": [
+      [
+        "f327f8af9d197de6"
+      ]
+    ]
+  },
+  {
+    "id": "701e95521d10694f",
+    "type": "function",
+    "z": "253add6a74e2ea05",
+    "name": "401 Unauthorized (audit export)",
+    "func": "msg.statusCode = 401;\nmsg.headers = msg.headers || {};\nif (!msg.headers['Content-Type']) msg.headers['Content-Type'] = 'application/json';\nmsg.payload = msg.payload && typeof msg.payload === 'object' ? msg.payload : { success: false, message: 'Unauthorized' };\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "x": 5970,
+    "y": 740,
+    "wires": [
+      [
+        "c40f812588eeeb8f"
+      ]
+    ]
+  },
+  {
+    "id": "f327f8af9d197de6",
+    "type": "function",
+    "z": "253add6a74e2ea05",
+    "name": "Parse Export Query + Build SQL",
+    "func": "var q = (msg.req && msg.req.query) || msg.query || {};\nvar esc = function(s) { return (s || '').replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\"); };\n\nmsg.format = (q.format || 'csv').toLowerCase();\nif (msg.format !== 'csv' && msg.format !== 'pdf') msg.format = 'csv';\n\nvar exportLimit = (msg.format === 'pdf') ? 500 : 10000;\n\nvar organization_id = NaN;\nif (msg.payload && typeof msg.payload === 'object' && msg.payload.organization_id != null)\n  organization_id = parseInt(msg.payload.organization_id, 10);\n\nif (isNaN(organization_id) || organization_id < 1) {\n  msg.statusCode = 403;\n  msg.headers = { 'Content-Type': 'application/json' };\n  msg.payload = { success: false, message: 'Organization context required' };\n  return [null, msg];\n}\n\nvar from = esc(q.from);\nvar to = esc(q.to);\nvar action = (q.action || '').toString().toLowerCase().trim();\nvar entity_type = esc(q.entity_type);\nvar user_id = parseInt(q.user_id, 10);\n\nvar sql, whereClause;\n\nif (action === 'notification') {\n  var notifWhere = [\"l.organization_id = \" + organization_id];\n  if (from) notifWhere.push(\"DATE(FROM_UNIXTIME(n.created_at/1000)) >= '\" + from + \"'\");\n  if (to) notifWhere.push(\"DATE(FROM_UNIXTIME(n.created_at/1000)) <= '\" + to + \"'\");\n  whereClause = \" WHERE \" + notifWhere.join(\" AND \");\n  var fromClause = \"ocpp_CSGO.charger_notifications n INNER JOIN ocpp_CSGO.Chargers ch ON ch.charger_id = n.charger_id INNER JOIN ocpp_CSGO.Locations l ON l.location_id = ch.location_id\";\n  sql = \"SELECT n.id, FROM_UNIXTIME(n.created_at/1000) AS timestamp, NULL AS user_id, l.organization_id, 'notification' AS action, 'notification' AS entity_type, COALESCE(CAST(n.charger_id AS CHAR), CAST(n.id AS CHAR)) AS entity_id, NULL AS old_value, JSON_OBJECT('message', COALESCE(n.message, ''), 'level', COALESCE(n.level, 'info'), 'online', COALESCE(n.online, 0)) AS new_value, NULL AS ip, NULL AS source, NULL AS correlation_id, NULL AS user_name FROM \" + fromClause + whereClause + \" ORDER BY n.created_at DESC LIMIT \" + exportLimit;\n} else {\n  var where = [\"a.organization_id = \" + organization_id];\n  if (from) where.push(\"DATE(a.timestamp) >= '\" + from + \"'\");\n  if (to) where.push(\"DATE(a.timestamp) <= '\" + to + \"'\");\n  if (action) where.push(\"a.action = '\" + esc(action) + \"'\");\n  if (entity_type) where.push(\"a.entity_type = '\" + entity_type + \"'\");\n  if (!isNaN(user_id)) where.push(\"a.user_id = \" + user_id);\n  whereClause = \" WHERE \" + where.join(\" AND \");\n  sql = \"SELECT a.id, a.timestamp, a.user_id, a.organization_id, a.action, a.entity_type, a.entity_id, a.old_value, a.new_value, a.ip, a.source, a.correlation_id, CONCAT(IFNULL(u.f_name,''), ' ', IFNULL(u.l_name,'')) AS user_name FROM audit_log a LEFT JOIN Users u ON u.user_id = a.user_id\" + whereClause + \" ORDER BY a.timestamp DESC LIMIT \" + exportLimit;\n}\n\nmsg.topic = sql;\nreturn [msg, null];",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 6290,
+    "y": 700,
+    "wires": [
+      [
+        "c58cd8bd4d07af02"
+      ],
+      [
+        "c40f812588eeeb8f"
+      ]
+    ]
+  },
+  {
+    "id": "c58cd8bd4d07af02",
+    "type": "mysql",
+    "z": "253add6a74e2ea05",
+    "mydb": "fd63a9e7fe57deda",
+    "name": "Get All Rows for Export",
+    "x": 6490,
+    "y": 640,
+    "wires": [
+      [
+        "8b177a336b607770"
+      ]
+    ]
+  },
+  {
+    "id": "8b177a336b607770",
+    "type": "switch",
+    "z": "253add6a74e2ea05",
+    "name": "format",
+    "property": "format",
+    "propertyType": "msg",
+    "rules": [
+      {
+        "t": "eq",
+        "v": "csv",
+        "vt": "str"
+      },
+      {
+        "t": "eq",
+        "v": "pdf",
+        "vt": "str"
+      }
+    ],
+    "checkall": "false",
+    "repair": false,
+    "outputs": 2,
+    "x": 6690,
+    "y": 660,
+    "wires": [
+      [
+        "ac94e71ba91e08a2"
+      ],
+      [
+        "70a8baaa5c0a0aa0"
+      ]
+    ]
+  },
+  {
+    "id": "ac94e71ba91e08a2",
+    "type": "function",
+    "z": "253add6a74e2ea05",
+    "name": "Prepare rows for CSV",
+    "func": "const rows = Array.isArray(msg.payload) ? msg.payload : [];\nconst esc = function (v) {\n  if (v == null || v === undefined) return '';\n  if (typeof v === 'object') return JSON.stringify(v);\n  return String(v);\n};\n\nfunction formatDateTimeExport(value) {\n  if (value == null || value === '') return '-';\n  const d = value instanceof Date ? value : new Date(value);\n  if (isNaN(d.getTime())) return '-';\n  function pad2(n) { return String(n).padStart(2, '0'); }\n  const day = pad2(d.getDate());\n  const month = pad2(d.getMonth() + 1);\n  const year = d.getFullYear();\n  const h = pad2(d.getHours());   // 24h\n  const m = pad2(d.getMinutes());\n  return day + '/' + month + '/' + year + ' ' + h + ':' + m;\n}\n\nconst out = rows.map(function (r) {\n  const ts = formatDateTimeExport(r.timestamp);\n  return {\n    id: r.id,\n    timestamp: (ts === '-' ? ts : \"'\" + ts),\n    user_id: r.user_id,\n    organization_id: r.organization_id,\n    action: r.action,\n    entity_type: r.entity_type,\n    entity_id: r.entity_id,\n    old_value: esc(r.old_value),\n    new_value: esc(r.new_value),\n    ip: r.ip,\n    source: r.source,\n    correlation_id: r.correlation_id,\n    user_name: r.user_name\n  };\n});\nmsg.payload = out;\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 6870,
+    "y": 620,
+    "wires": [
+      [
+        "f4ea0c10dce69c36"
+      ]
+    ]
+  },
+  {
+    "id": "f4ea0c10dce69c36",
+    "type": "csv",
+    "z": "253add6a74e2ea05",
+    "name": "",
+    "spec": "rfc",
+    "sep": ",",
+    "hdrin": "",
+    "hdrout": "none",
+    "multi": "one",
+    "ret": "\r\n",
+    "temp": "",
+    "skip": "0",
+    "strings": true,
+    "include_empty_strings": "",
+    "include_null_values": "",
+    "x": 7050,
+    "y": 580,
+    "wires": [
+      [
+        "2e30725fbc656c74"
+      ]
+    ]
+  },
+  {
+    "id": "2e30725fbc656c74",
+    "type": "function",
+    "z": "253add6a74e2ea05",
+    "name": "Set CSV response headers",
+    "func": "var header = 'id,timestamp,user_id,organization_id,action,entity_type,entity_id,old_value,new_value,ip,source,correlation_id,user_name\\n';\nvar body = (typeof msg.payload === 'string' ? msg.payload : '') || '';\nmsg.payload = header + body;\nvar d = new Date();\nvar dateStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');\nmsg.headers = msg.headers || {};\nmsg.headers['Content-Type'] = 'text/csv; charset=utf-8';\nmsg.headers['Content-Disposition'] = 'attachment; filename=\"audit-log-' + dateStr + '.csv\"';\nmsg.statusCode = 200;\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 7230,
+    "y": 620,
+    "wires": [
+      [
+        "c40f812588eeeb8f"
+      ]
+    ]
+  },
+  {
+    "id": "70a8baaa5c0a0aa0",
+    "type": "function",
+    "z": "253add6a74e2ea05",
+    "name": "Prepare PDF",
+    "func": "const rows = Array.isArray(msg.payload) ? msg.payload : [];\n\nif (!rows.length) {\n  msg.statusCode = 404;\n  msg.headers = { 'Content-Type': 'application/json' };\n  msg.payload = {\n    success: false,\n    message: 'No data found for export'\n  };\n  msg._responseTarget = 'export';\n  return msg;\n}\n\nif (rows.length > 500) {\n  msg.statusCode = 400;\n  msg.headers = { 'Content-Type': 'application/json' };\n  msg.payload = {\n    success: false,\n    message: 'PDF export is limited to 500 rows. Please narrow the date range.'\n  };\n  msg._responseTarget = 'export';\n  return msg;\n}\nfunction formatDateTimeExport(value) {\n  if (value == null || value === '') return '-';\n  const d = value instanceof Date ? value : new Date(value);\n  if (isNaN(d.getTime())) return '-';\n  function pad2(n) { return String(n).padStart(2, '0'); }\n  const day = pad2(d.getDate());\n  const month = pad2(d.getMonth() + 1);\n  const year = d.getFullYear();\n  const h = pad2(d.getHours());   // 24h\n  const m = pad2(d.getMinutes());\n  return day + '/' + month + '/' + year + ' ' + h + ':' + m;\n}\n\nfunction toText(v) {\n  if (v == null || v === undefined) return '';\n  if (typeof v === 'object') return JSON.stringify(v);\n  return String(v);\n}\n\nfunction trunc(v, len) {\n  const s = toText(v);\n  return s.length > len ? s.slice(0, len) + '...' : s;\n}\n\nconst now = new Date();\nconst genStr =\n  now.getFullYear() + '-' +\n  String(now.getMonth() + 1).padStart(2, '0') + '-' +\n  String(now.getDate()).padStart(2, '0') + ' ' +\n  String(now.getHours()).padStart(2, '0') + ':' +\n  String(now.getMinutes()).padStart(2, '0') + ':' +\n  String(now.getSeconds()).padStart(2, '0');\n\nmsg.payload = {\n  generated_at: genStr,\n  rows: rows.map(r => ({\n    timestamp: formatDateTimeExport(r.timestamp),\n    user_name: r.user_name || '',\n    action: r.action || '',\n    entity_type: r.entity_type || '',\n    entity_id: r.entity_id || '',\n    old_value: trunc(r.old_value, 200),\n    new_value: trunc(r.new_value, 200)\n  }))\n};\n\nmsg._auditReportFilename = 'audit-log-report-' + now.toISOString().slice(0, 10);\n\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 6840,
+    "y": 700,
+    "wires": [
+      [
+        "build_html_for_puppeteer"
+      ]
+    ]
+  },
+  {
+    "id": "58183f4395347a13",
+    "type": "switch",
+    "z": "253add6a74e2ea05",
+    "name": "Route error to response",
+    "property": "_responseTarget",
+    "propertyType": "msg",
+    "rules": [
+      {
+        "t": "eq",
+        "v": "list",
+        "vt": "str"
+      },
+      {
+        "t": "eq",
+        "v": "export",
+        "vt": "str"
+      }
+    ],
+    "checkall": "false",
+    "repair": false,
+    "outputs": 2,
+    "x": 6190,
+    "y": 860,
+    "wires": [
+      [
+        "a9b256a1678b2e29"
+      ],
+      [
+        "c40f812588eeeb8f"
+      ]
+    ]
+  },
+  {
+    "id": "8b6c02414bb0af15",
+    "type": "debug",
+    "z": "253add6a74e2ea05",
+    "name": "Debug: Caught error",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full",
+    "x": 6170,
+    "y": 820,
+    "wires": []
+  },
+  {
+    "id": "aff00be254b59eb8",
+    "type": "function",
+    "z": "253add6a74e2ea05",
+    "name": "Format Error Response",
+    "func": "const err = msg.error || {};\nconst errMsg =\n    (err.message) ? err.message :\n    (msg.message) ? String(msg.message) :\n    'Unknown error';\n\nmsg.statusCode = 500;\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.payload = {\n    success: false,\n    where: 'catch',\n    error_message: errMsg,\n    error_name: err.name || null,\n    error_stack: err.stack || null,\n    error_source: err.source || null\n};\n\nconst url = (msg.req && msg.req.url) ? msg.req.url : '';\nmsg._responseTarget = (url.indexOf('export') !== -1) ? 'export' : 'list';\n\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 5950,
+    "y": 840,
+    "wires": [
+      [
+        "58183f4395347a13",
+        "8b6c02414bb0af15",
+        "11a389c20341d059"
+      ]
+    ]
+  },
+  {
+    "id": "c40f812588eeeb8f",
+    "type": "http response",
+    "z": "253add6a74e2ea05",
+    "name": "Export HTTP Response",
+    "statusCode": "200",
+    "x": 7890,
+    "y": 660,
+    "wires": []
+  },
+  {
+    "id": "411b63c235aa8990",
+    "type": "http in",
+    "z": "253add6a74e2ea05",
+    "name": "GET /api/v4/audit-log/export",
+    "url": "/api/v4/audit-log/export",
+    "method": "get",
+    "x": 5690,
+    "y": 680,
+    "wires": [
+      [
+        "fdfe38bbe3901caa"
+      ]
+    ]
+  },
+  {
+    "id": "11a389c20341d059",
+    "type": "debug",
+    "z": "253add6a74e2ea05",
+    "name": "debug 14",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 6570,
+    "y": 920,
+    "wires": []
+  },
+  {
+    "id": "fd63a9e7fe57deda",
+    "type": "MySQLdatabase",
+    "name": "Lena's DB Connection",
+    "host": "migrate.cluster-c3o6qc26ias1.eu-west-1.rds.amazonaws.com",
+    "port": "3306",
+    "db": "ocpp_CSGO",
+    "tz": "",
+    "charset": "UTF8"
+  },
+  {
+    "id": "319a08b4c932c1ae",
+    "type": "global-config",
+    "env": [],
+    "modules": {
+      "node-red-contrib-jwt": "0.1.0",
+      "node-red-node-mysql": "3.0.0"
+    }
+  },
+  {
+    "id": "build_html_for_puppeteer",
+    "type": "function",
+    "z": "253add6a74e2ea05",
+    "name": "Build HTML for Puppeteer",
+    "func": "const data = msg.payload || {};\nconst generatedAt = data.generated_at || '';\nconst rows = Array.isArray(data.rows) ? data.rows : [];\n\nconst esc = v => {\n  if (v == null) return '';\n  return String(v)\n    .replace(/&/g,'&amp;')\n    .replace(/</g,'&lt;')\n    .replace(/>/g,'&gt;');\n};\n\nconst tableRows = rows.map(r => `\n  <tr>\n    <td>${esc(r.timestamp)}</td>\n    <td>${esc(r.user_name)}</td>\n    <td>${esc(r.action)}</td>\n    <td>${esc(r.entity_type)}</td>\n    <td>${esc(r.entity_id)}</td>\n    <td class=\"val\">${esc(r.old_value)}</td>\n    <td class=\"val\">${esc(r.new_value)}</td>\n  </tr>`).join('');\n\nmsg.payload = `<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"UTF-8\">\n<style>\n  * { box-sizing: border-box; margin: 0; padding: 0; }\n  body { font-family: Arial, sans-serif; font-size: 9px; padding: 15px; }\n  h1 { font-size: 14px; margin-bottom: 4px; }\n  .subtitle { font-size: 9px; color: #666; margin-bottom: 12px; }\n  table { width: 100%; border-collapse: collapse; }\n  thead tr { background: #2c3e50; color: #fff; }\n  th { padding: 6px 5px; text-align: left; font-size: 9px; }\n  td { padding: 5px; border-bottom: 1px solid #e0e0e0; word-break: break-word; font-size: 8px; }\n  .val { max-width: 180px; }\n  tr:nth-child(even) td { background: #f9f9f9; }\n</style>\n</head>\n<body>\n  <h1>Audit Log Report</h1>\n  <p class=\"subtitle\">Generated: ${esc(generatedAt)} &nbsp;|&nbsp; Total: ${rows.length} records</p>\n  <table>\n    <thead>\n      <tr>\n        <th>Timestamp</th><th>User</th><th>Action</th>\n        <th>Entity Type</th><th>Entity ID</th><th>Old Value</th><th>New Value</th>\n      </tr>\n    </thead>\n    <tbody>${tableRows}</tbody>\n  </table>\n</body>\n</html>`;\n\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 7100,
+    "y": 740,
+    "wires": [
+      [
+        "puppeteer_pdf_node"
+      ]
+    ]
+  },
+  {
+    "id": "puppeteer_pdf_node",
+    "type": "function",
+    "z": "253add6a74e2ea05",
+    "name": "Puppeteer → PDF",
+    "func": "const puppeteer = global.get('puppeteer');\nif (!puppeteer) {\n  msg.statusCode = 500;\n  msg.headers = { 'Content-Type': 'application/json' };\n  msg.payload = { success: false, message: 'Puppeteer not available in global context' };\n  node.send(msg);\n  return;\n}\n\nconst htmlContent = msg.payload;\nconst rawName = msg._auditReportFilename || 'audit-log-report';\n\n(async () => {\n  try {\n    const browser = await puppeteer.launch({\n      args: [\n        '--no-sandbox',\n        '--disable-setuid-sandbox',\n        '--disable-dev-shm-usage',\n        '--disable-gpu'\n      ],\n      headless: true\n    });\n    const page = await browser.newPage();\n    await page.setContent(htmlContent, { waitUntil: 'networkidle0' });\n    const pdf = await page.pdf({\n      format: 'A4',\n      landscape: true,\n      printBackground: true,\n      margin: { top: '10mm', bottom: '10mm', left: '8mm', right: '8mm' }\n    });\n    await browser.close();\n\n    // sanitize filename\n    let filename = '';\n    for (let i = 0; i < rawName.length; i++) {\n      const ch = rawName[i];\n      filename += /[a-zA-Z0-9._-]/.test(ch) ? ch : '_';\n    }\n\n    msg.payload = Buffer.from(pdf);\n    msg.headers = {\n      'Content-Type': 'application/pdf',\n      'Content-Disposition': 'attachment; filename=\"' + filename + '.pdf\"'\n    };\n    msg.statusCode = 200;\n    msg._responseTarget = 'export';\n    node.send(msg);\n  } catch (err) {\n    node.error('Puppeteer Error: ' + err.message, msg);\n    msg.statusCode = 500;\n    msg.headers = { 'Content-Type': 'application/json' };\n    msg.payload = { success: false, message: 'PDF generation failed: ' + err.message };\n    msg._responseTarget = 'export';\n    node.send(msg);\n  }\n})();",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 7480,
+    "y": 740,
+    "wires": [
+      [
+        "c40f812588eeeb8f"
+      ]
+    ]
+  }
+]

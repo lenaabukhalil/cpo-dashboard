@@ -4,12 +4,14 @@ import Sidebar from './Sidebar'
 import Header from './Header'
 import { Sheet, SheetContent } from './ui/sheet'
 import { useLanguage } from '../context/LanguageContext'
+import { useNodeRedNotificationStream } from '../hooks/useNodeRedNotificationStream'
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { isRtl } = useLanguage()
   const sidebarSide = isRtl ? 'right' : 'left'
   const contentMargin = isRtl ? 'mr-0 lg:mr-64' : 'ml-0 lg:ml-64'
+  useNodeRedNotificationStream()
 
   return (
     <div className="min-h-screen min-h-[100dvh] w-full max-w-[100vw] overflow-x-hidden bg-background" dir={isRtl ? 'rtl' : 'ltr'}>

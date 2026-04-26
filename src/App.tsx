@@ -18,6 +18,8 @@ import SupportLayout from './pages/support/SupportLayout'
 import ListOfLocationChargerConnectorTariffs from './pages/ListOfLocationChargerConnectorTariffs'
 import AuditLog from './pages/AuditLog'
 import Profile from './pages/Profile'
+import NotificationDetail from './pages/NotificationDetail'
+import { NotificationProvider } from './contexts/NotificationContext'
 
 function isOperator(roleName: string | undefined): boolean {
   return (roleName || '').toLowerCase() === 'operator'
@@ -97,6 +99,10 @@ function AppRoutes() {
         <Route path="access-log" element={<Navigate to="/audit-log" replace />} />
         <Route path="settings" element={<RoleGuard><Settings /></RoleGuard>} />
         <Route path="profile" element={<Profile />} />
+        <Route
+          path="notifications/:notificationId"
+          element={<ProtectedRoute><NotificationDetail /></ProtectedRoute>}
+        />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
@@ -106,7 +112,9 @@ function AppRoutes() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppRoutes />
+      <NotificationProvider>
+        <AppRoutes />
+      </NotificationProvider>
     </AuthProvider>
   )
 }
