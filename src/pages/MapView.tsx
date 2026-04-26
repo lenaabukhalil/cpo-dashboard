@@ -220,10 +220,11 @@ export default function MapView() {
             zoom={DEFAULT_ZOOM}
             className="h-full w-full min-h-[200px] max-w-full"
             scrollWheelZoom={false}
-            dragging={false}
-            doubleClickZoom={false}
-            touchZoom={false}
+            dragging={true}
+            doubleClickZoom={true}
+            touchZoom={true}
             zoomControl={true}
+            attributionControl={false}
           >
             <MapResizeHandler />
             <HoverScrollWheelZoom />
@@ -234,7 +235,6 @@ export default function MapView() {
               fallbackZoom={DEFAULT_ZOOM}
             />
             <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
             {chargersWithPosition.map((c) => {
