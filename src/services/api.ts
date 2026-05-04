@@ -1,8 +1,28 @@
 const BASE = import.meta.env.VITE_API_URL || ''
 
+/** Client-side fetch timeout (maps to 504-shaped response for callers e.g. login). */
+const REQUEST_TIMEOUT_MS = 15_000
+
+export type PermissionMap = Record<string, 'R' | 'RW'>
+
 /** GET cache: same URL within TTL returns cached response so data appears faster on revisit */
 const GET_CACHE_TTL_MS = 20_000 // 20 seconds
 const getCache = new Map<string, { data: unknown; at: number }>()
+
+function combineAbortSignals(user: AbortSignal | undefined, timeout: AbortSignal): AbortSignal {
+  if (!user) return timeout
+  const c = new AbortController()
+  const onAbort = () => {
+    if (!c.signal.aborted) c.abort()
+  }
+  if (user.aborted || timeout.aborted) {
+    onAbort()
+    return c.signal
+  }
+  user.addEventListener('abort', onAbort, { once: true })
+  timeout.addEventListener('abort', onAbort, { once: true })
+  return c.signal
+}
 
 export function getToken(): string | null {
   return localStorage.getItem('cpo_token')
@@ -16,8 +36,14 @@ export function clearGetCache(): void {
 export async function request<T>(
   path: string,
   opts: RequestInit & { params?: Record<string, string>; noAuth?: boolean; skipCache?: boolean } = {}
-): Promise<{ data?: T; success: boolean; message?: string; statusCode?: number }> {
-  const { params, noAuth, skipCache, ...init } = opts
+): Promise<{
+  data?: T
+  success: boolean
+  message?: string
+  statusCode?: number
+  requiredPermission?: string
+}> {
+  const { params, noAuth, skipCache, signal: userSignal, ...init } = opts
   const url = new URL(path, window.location.origin)
   if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v))
   const fullPath = url.pathname + url.search
@@ -38,15 +64,61 @@ export async function request<T>(
     ...(init.headers as Record<string, string>),
   }
   if (token) headers['Authorization'] = `Bearer ${token}`
-  const res = await fetch(BASE + fullPath, { ...init, headers })
-  const json = await res.json().catch(() => ({}))
+
+  const timeoutCtrl = new AbortController()
+  const timeoutId = window.setTimeout(() => timeoutCtrl.abort(), REQUEST_TIMEOUT_MS)
+  const combinedSignal = combineAbortSignals(userSignal ?? undefined, timeoutCtrl.signal)
+
+  let res: Response
+  try {
+    res = await fetch(BASE + fullPath, { ...init, headers, signal: combinedSignal })
+  } catch (e) {
+    window.clearTimeout(timeoutId)
+    const name = (e as Error)?.name
+    if (name === 'AbortError') {
+      if (timeoutCtrl.signal.aborted) {
+        return { success: false, statusCode: 504, message: 'Request timed out' }
+      }
+      return { success: false, message: (e as Error)?.message || 'Network error' }
+    }
+    return { success: false, message: (e as Error)?.message || 'Network error' }
+  }
+  window.clearTimeout(timeoutId)
+
+  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>
   if (!res.ok) {
+    const message = typeof json.message === 'string' ? json.message : res.statusText
+    const requiredPermission =
+      typeof json.requiredPermission === 'string' ? json.requiredPermission : undefined
+
+    if (res.status === 403 && requiredPermission != null) {
+      window.dispatchEvent(
+        new CustomEvent('cpo-api-forbidden', {
+          detail: { message: message || undefined },
+        }),
+      )
+      return {
+        ...json,
+        success: false,
+        message,
+        statusCode: res.status,
+        requiredPermission,
+      } as { data?: T; success: boolean; message?: string; statusCode?: number; requiredPermission?: string }
+    }
+
     if (res.status === 401 && !fullPath.includes('auth/login')) {
       clearGetCache()
       localStorage.removeItem('cpo_token')
+      localStorage.removeItem('cpo_permissions')
       window.location.href = '/login'
     }
-    return { ...json, success: false, message: json.message || res.statusText, statusCode: res.status }
+    return {
+      ...json,
+      success: false,
+      message,
+      statusCode: res.status,
+      ...(requiredPermission !== undefined ? { requiredPermission } : {}),
+    } as { data?: T; success: boolean; message?: string; statusCode?: number; requiredPermission?: string }
   }
   const out = { ...json, success: json.success !== false }
   if (isGet && res.ok) getCache.set(fullPath, { data: out, at: Date.now() })
@@ -55,14 +127,15 @@ export async function request<T>(
 
 // Auth
 export async function login(identifier: string, password: string) {
-  return request<{ token: string; user: AuthUser; permissions: string[] }>('/api/v4/auth/login', {
+  return request<{ token: string; user: AuthUser; permissions: PermissionMap }>('/api/v4/auth/login', {
     method: 'POST',
     body: JSON.stringify({ identifier, password }),
+    noAuth: true,
   })
 }
 
 export async function me(opts?: { skipCache?: boolean }) {
-  return request<{ user: AuthUser; permissions: string[] }>('/api/v4/auth/me', {
+  return request<{ user: AuthUser; permissions: PermissionMap }>('/api/v4/auth/me', {
     ...(opts?.skipCache && { skipCache: true }),
   })
 }
@@ -91,6 +164,8 @@ export interface AuthUser {
   l_name: string
   email?: string
   profile_img_url?: string | null
+  /** Optional copy of server `permissions` when merged onto context user; primary map lives on AuthContext. */
+  permissions?: PermissionMap
 }
 
 // Org (read only for CPO) — skipCache so sidebar logo updates after save

@@ -7,6 +7,7 @@ import { Label } from '../components/ui/label'
 import { Pencil, Users, UserPlus, X } from 'lucide-react'
 import { canManagePartnerUsers } from '../lib/permissions'
 import { useAuth } from '../context/AuthContext'
+import { usePermission } from '../hooks/usePermission'
 import { useTranslation } from '../context/LanguageContext'
 import {
   getPartnerUsers,
@@ -33,7 +34,10 @@ export default function PartnerUsers() {
     const opt = ROLE_OPTIONS.find((o) => o.value === roleId)
     return opt ? t(opt.labelKey) : String(roleId)
   }
-  const canManage = canManagePartnerUsers(user?.role_name)
+  const canWriteUsers = usePermission('users.manage', 'RW')
+  const legacyCanManage = canManagePartnerUsers(user?.role_name)
+  const showWriteUi = canWriteUsers || legacyCanManage
+  const writeActionsEnabled = canWriteUsers
   const [list, setList] = useState<PartnerUser[]>([])
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
@@ -204,7 +208,7 @@ export default function PartnerUsers() {
         </p>
       </div>
 
-      {canManage && (
+      {showWriteUi && (
         <Card className="border border-border">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -213,7 +217,12 @@ export default function PartnerUsers() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Button type="button" onClick={() => setAddOpen(true)}>
+            <Button
+              type="button"
+              disabled={!writeActionsEnabled}
+              title={!writeActionsEnabled ? t('common.readOnlyAccess') : undefined}
+              onClick={() => writeActionsEnabled && setAddOpen(true)}
+            >
               {t('users.addUser')}
             </Button>
           </CardContent>
@@ -485,7 +494,7 @@ export default function PartnerUsers() {
                     <th className="text-start py-3 px-4 font-semibold">{t('users.mobile')}</th>
                     <th className="text-start py-3 px-4 font-semibold">{t('users.email')}</th>
                     <th className="text-start py-3 px-4 font-semibold">{t('users.role')}</th>
-                    {canManage && <th className="text-end py-3 px-4 font-semibold">{t('users.actions')}</th>}
+                    {showWriteUi && <th className="text-end py-3 px-4 font-semibold">{t('users.actions')}</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -501,7 +510,7 @@ export default function PartnerUsers() {
                           {getRoleLabel(u.role_id ?? 2)}
                         </span>
                       </td>
-                      {canManage && (
+                      {showWriteUi && (
                         <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-1">
                             <Button
@@ -509,8 +518,9 @@ export default function PartnerUsers() {
                               variant="ghost"
                               size="sm"
                               className="h-8"
-                              onClick={() => openEdit(u)}
-                              title="Edit"
+                              disabled={!writeActionsEnabled}
+                              title={!writeActionsEnabled ? t('common.readOnlyAccess') : 'Edit'}
+                              onClick={() => writeActionsEnabled && openEdit(u)}
                             >
                               <Pencil className="h-4 w-4" />
                             </Button>
@@ -519,8 +529,9 @@ export default function PartnerUsers() {
                               variant="ghost"
                               size="sm"
                               className="h-8 text-destructive hover:text-destructive"
-                              onClick={() => handleDelete(u.user_id)}
-                              title={t('support.remove')}
+                              disabled={!writeActionsEnabled}
+                              title={!writeActionsEnabled ? t('common.readOnlyAccess') : t('support.remove')}
+                              onClick={() => writeActionsEnabled && handleDelete(u.user_id)}
                             >
                               {t('support.remove')}
                             </Button>

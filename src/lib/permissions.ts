@@ -1,5 +1,5 @@
 /**
- * CPO role-based permissions.
+ * CPO role-based permissions + JWT permission map (RBAC).
  * Structure aligned to: A.Organizations | B.Operation | C.Monitor | D.Reports | E.Support | F.ION Users
  */
 
@@ -18,7 +18,37 @@ import {
   ScrollText,
 } from 'lucide-react'
 
-export type Role = 'admin' | 'operator' | 'accountant' | 'engineer' | 'manager'
+export type Access = 'R' | 'RW'
+export type PermissionMap = Record<string, Access>
+
+/** Map UI route → required permission code + minimum access. Codes must match `ocpp_CSGO.Permissions.code` exactly. */
+export const ROUTE_PERMISSIONS: Record<string, { code: string; access: Access }> = {
+  '/org': { code: 'organizations.view', access: 'R' },
+  '/details': { code: 'stations.view', access: 'R' },
+  '/list': { code: 'stations.view', access: 'R' },
+  '/sessions': { code: 'sessions.view', access: 'R' },
+  '/reports': { code: 'reports.view', access: 'R' },
+  '/support': { code: 'support.view', access: 'R' },
+  // TODO(rbac): confirm vs `ocpp_CSGO.Permissions` — route uses R so read-only users can open the page; writes require RW via usePermission.
+  '/settings': { code: 'settings.view', access: 'R' },
+  '/map': { code: 'map.view', access: 'R' },
+  // TODO(rbac): confirm — list GET may be R-only; mutations still enforced server-side as RW.
+  '/partner-users': { code: 'users.manage', access: 'R' },
+  '/audit-log': { code: 'audit.view', access: 'R' },
+}
+
+// TODO(rbac): No RBAC matrix settings page in this repo. When added, use:
+// GET /api/v4/rbac/permissions | GET /api/v4/rbac/roles | GET/PUT /api/v4/rbac/roles/permissions?roleId
+
+export function hasPermission(perms: PermissionMap | undefined, code: string, need: Access = 'R'): boolean {
+  if (!perms) return false
+  const got = perms[code]
+  if (!got) return false
+  if (need === 'RW') return got === 'RW'
+  return true
+}
+
+export type Role = 'admin' | 'operator' | 'accountant' | 'engineer' | 'manager' | 'viewer'
 
 export interface NavItem {
   to: string
@@ -35,11 +65,12 @@ export interface NavItem {
 
 function normalizeRole(roleName: string | undefined): Role | null {
   const r = (roleName || '').toLowerCase()
-  if (r === 'admin' || r === 'owner') return 'admin'
+  if (r === 'admin' || r === 'owner' || r === 'super_admin') return 'admin'
   if (r === 'operator') return 'operator'
   if (r === 'accountant') return 'accountant'
   if (r === 'engineer') return 'engineer'
   if (r === 'manager') return 'manager'
+  if (r === 'viewer') return 'viewer'
   return null
 }
 
@@ -62,17 +93,35 @@ const ENGINEER_PATHS = ['/', '/map', '/org', '/details', '/list', '/sessions', '
 const MANAGER_PATHS = ['/', '/map', '/org', '/details', '/list', '/sessions', '/support']
 /** Accountant: Dashboard, Organization, List, D. Reports (Reports & Analytics). No Predictive AI, Map, Users, Monitor, Maintenance, Settings. */
 const ACCOUNTANT_PATHS = ['/', '/org', '/list', '/reports']
+/** Viewer: read-focused default until backend maps dedicated codes (same footprint as accountant). */
+const VIEWER_PATHS = ACCOUNTANT_PATHS
 
-export function canAccessPath(roleName: string | undefined, path: string): boolean {
-  const role = normalizeRole(roleName)
-  if (!role) return false
-  const p = path.replace(/\/$/, '') || '/'
+function canAccessPathByRole(role: Role, p: string): boolean {
   if (role === 'accountant') return ACCOUNTANT_PATHS.includes(p)
+  if (role === 'viewer') return VIEWER_PATHS.includes(p)
   if (role === 'engineer') return ENGINEER_PATHS.includes(p)
   if (role === 'manager') return MANAGER_PATHS.includes(p)
   if (role === 'operator') return OPERATOR_PATHS.includes(p)
   if (role === 'admin') return ADMIN_PATHS.includes(p) && p !== '/billing'
   return false
+}
+
+export function canAccessPath(
+  roleName: string | undefined,
+  path: string,
+  permissions?: PermissionMap,
+): boolean {
+  const p = path.replace(/\/$/, '') || '/'
+  if (p === '/') return true
+
+  const routeRule = ROUTE_PERMISSIONS[p]
+  if (routeRule) {
+    return hasPermission(permissions, routeRule.code, routeRule.access)
+  }
+
+  const role = normalizeRole(roleName)
+  if (!role) return false
+  return canAccessPathByRole(role, p)
 }
 
 /** Nav items with optional group (section label). Order: A → B → C → D → E. */
@@ -144,7 +193,7 @@ function accountantNav(): NavItem[] {
 
 export function getNavItems(roleName: string | undefined): NavItem[] {
   const role = normalizeRole(roleName)
-  if (role === 'accountant') return accountantNav()
+  if (role === 'accountant' || role === 'viewer') return accountantNav()
   if (role === 'engineer') return engineerNav()
   if (role === 'manager') return managerNav()
   if (role === 'operator') return operatorNav()

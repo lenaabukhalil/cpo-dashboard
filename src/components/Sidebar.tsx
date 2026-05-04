@@ -4,7 +4,8 @@ import { Building2, LogOut, Pencil } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from '../context/LanguageContext'
-import { getNavItems } from '../lib/permissions'
+import { canAccessPath, getNavItems } from '../lib/permissions'
+import { usePermission } from '../hooks/usePermission'
 import { Button } from './ui/button'
 import OrganizationLogoDialog from './OrganizationLogoDialog'
 import { getOrg, type Org } from '../services/api'
@@ -17,8 +18,9 @@ type Props = {
 }
 
 export default function Sidebar({ open: _open = true, onOpenChange, side = 'left', mobile = false }: Props) {
-  const { user, logout } = useAuth()
+  const { user, logout, permissions } = useAuth()
   const { t } = useTranslation()
+  const canEditOrgLogo = usePermission('organizations.view', 'RW')
 
   const roleName = (user?.role_name || 'Admin').toString()
   const first = (user?.f_name || '').toString().trim()
@@ -28,7 +30,9 @@ export default function Sidebar({ open: _open = true, onOpenChange, side = 'left
   const title = `${roleName === 'Owner' ? 'Admin' : roleName} Dashboard`
   const subtitle = `Hello, ${fullName || roleName}`
 
-  const nav = getNavItems(user?.role_name)
+  const nav = getNavItems(user?.role_name).filter((it) =>
+    canAccessPath(user?.role_name, it.to, permissions),
+  )
   const groups = Array.from(
     nav.reduce((m, it) => {
       const key = it.group || ''
@@ -36,7 +40,7 @@ export default function Sidebar({ open: _open = true, onOpenChange, side = 'left
       m.get(key)!.push(it)
       return m
     }, new Map<string, typeof nav>()),
-  )
+  ).filter(([, items]) => items.length > 0)
 
   const handleNavigate = () => {
     if (mobile) onOpenChange?.(false)
@@ -95,15 +99,22 @@ export default function Sidebar({ open: _open = true, onOpenChange, side = 'left
             <div className="flex flex-col items-center gap-2 shrink-0">
               <button
                 type="button"
-                title={orgId != null ? 'Edit organization logo' : undefined}
+                title={
+                  orgId == null
+                    ? undefined
+                    : canEditOrgLogo
+                      ? 'Edit organization logo'
+                      : t('common.readOnlyAccess')
+                }
+                disabled={orgId != null && !canEditOrgLogo}
                 className={cn(
                   'relative h-10 w-10 rounded-xl border border-border bg-background flex items-center justify-center shrink-0 overflow-hidden transition-all duration-200',
-                  orgId != null
+                  orgId != null && canEditOrgLogo
                     ? 'cursor-pointer group/logo hover:bg-muted/40 hover:border-primary/45 hover:ring-2 hover:ring-ring/60 hover:ring-offset-2 hover:ring-offset-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card'
-                    : 'cursor-default',
+                    : 'cursor-default opacity-90',
                 )}
                 onClick={() => {
-                  if (orgId != null) setLogoDialogOpen(true)
+                  if (orgId != null && canEditOrgLogo) setLogoDialogOpen(true)
                 }}
                 aria-label={orgId != null ? 'Change organization logo' : 'Logo'}
               >
@@ -123,7 +134,7 @@ export default function Sidebar({ open: _open = true, onOpenChange, side = 'left
                     aria-hidden
                   />
                 )}
-                {orgId != null ? (
+                {orgId != null && canEditOrgLogo ? (
                   <span
                     aria-hidden
                     className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-[inherit] bg-background/55 opacity-0 transition-opacity duration-200 group-hover/logo:opacity-100"

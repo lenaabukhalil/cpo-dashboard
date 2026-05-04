@@ -2,14 +2,14 @@ import { useState } from 'react'
 import { useNavigate, Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from '../context/LanguageContext'
-import { login } from '../services/api'
+import { login, type AuthUser } from '../services/api'
 import { Card, CardContent, CardHeader } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 
 export default function Login() {
-  const { user, setUser } = useAuth()
+  const { user, setAuth } = useAuth()
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [identifier, setIdentifier] = useState('')
@@ -29,14 +29,31 @@ export default function Login() {
     }
     const res = await login(id || identifier.trim(), password)
     setLoading(false)
+    const err = res as { message?: string; details?: string; error?: string; statusCode?: number }
+    const msgLow = (res.message || '').toLowerCase()
+    if (err.statusCode === 504 || res.message === 'Request timed out') {
+      setError(t('login.errorServiceSlow'))
+      return
+    }
+    if (
+      !err.statusCode &&
+      (msgLow.includes('failed to fetch') || msgLow.includes('network error') || msgLow.includes('load failed'))
+    ) {
+      setError(t('login.errorServiceSlow'))
+      return
+    }
     const token = (res as { token?: string }).token ?? (res as { data?: { token?: string } }).data?.token
     const userObj = (res as { user?: unknown }).user ?? (res as { data?: { user?: unknown } }).data?.user
+    const perms =
+      (res as { permissions?: Record<string, 'R' | 'RW'> }).permissions ??
+      (res as { data?: { permissions?: Record<string, 'R' | 'RW'> } }).data?.permissions ??
+      {}
     if (res.success && token) {
       localStorage.setItem('cpo_token', token)
-      if (userObj) setUser(userObj as Parameters<typeof setUser>[0])
+      if (userObj) setAuth(userObj as AuthUser, perms)
+      else setAuth(null)
       navigate('/')
     } else {
-      const err = res as { message?: string; details?: string; error?: string; statusCode?: number }
       const apiMsg = (err.message || err.error || err.details || '').trim().toLowerCase()
       if (apiMsg.includes('invalid email') || apiMsg.includes('user not found')) {
         setError(t('login.errorInvalidEmail'))

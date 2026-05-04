@@ -1,13 +1,41 @@
-import React, { createContext, useContext, useEffect, useState } from 'react'
-import type { AuthUser } from '../services/api'
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import type { AuthUser, PermissionMap } from '../services/api'
 import { clearGetCache, me } from '../services/api'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
+const CPO_PERMISSIONS_KEY = 'cpo_permissions'
+
+function readStoredPermissions(): PermissionMap {
+  try {
+    const raw = localStorage.getItem(CPO_PERMISSIONS_KEY)
+    if (!raw) return {}
+    const p = JSON.parse(raw) as unknown
+    if (!p || typeof p !== 'object' || Array.isArray(p)) return {}
+    const out: PermissionMap = {}
+    for (const [k, v] of Object.entries(p)) {
+      if (v === 'R' || v === 'RW') out[k] = v
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+function persistPermissions(perms: PermissionMap) {
+  try {
+    localStorage.setItem(CPO_PERMISSIONS_KEY, JSON.stringify(perms))
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
 
 type AuthContextValue = {
   user: AuthUser | null
+  permissions: PermissionMap
   loading: boolean
+  /** @deprecated Prefer setAuth(user, permissions) so permission map stays in sync. */
   setUser: (u: AuthUser | null) => void
+  setAuth: (user: AuthUser | null, permissions?: PermissionMap | null) => void
   logout: () => void
 }
 
@@ -15,7 +43,24 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
+  const [permissions, setPermissions] = useState<PermissionMap>(readStoredPermissions)
   const [loading, setLoading] = useState(true)
+
+  const setAuth = useCallback((u: AuthUser | null, perms?: PermissionMap | null) => {
+    setUser(u)
+    if (!u) {
+      setPermissions({})
+      try {
+        localStorage.removeItem(CPO_PERMISSIONS_KEY)
+      } catch {
+        /* ignore */
+      }
+      return
+    }
+    const next = perms ?? {}
+    setPermissions(next)
+    persistPermissions(next)
+  }, [])
 
   useEffect(() => {
     const token = localStorage.getItem('cpo_token')
@@ -23,11 +68,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false)
       return
     }
-    me()
+    me({ skipCache: true })
       .then((r) => {
-        const u = (r as { user?: AuthUser }).user ?? (r as { data?: { user?: AuthUser } }).data?.user
-        if (r.success && u) setUser(u)
-        else localStorage.removeItem('cpo_token')
+        const u =
+          (r as { user?: AuthUser }).user ?? (r as { data?: { user?: AuthUser } }).data?.user
+        const perms =
+          (r as { permissions?: PermissionMap }).permissions ??
+          (r as { data?: { permissions?: PermissionMap } }).data?.permissions ??
+          {}
+        if (r.success && u) {
+          setUser(u)
+          setPermissions(perms)
+          persistPermissions(perms)
+        } else {
+          localStorage.removeItem('cpo_token')
+          localStorage.removeItem(CPO_PERMISSIONS_KEY)
+          clearGetCache()
+          setUser(null)
+          setPermissions({})
+        }
       })
       .finally(() => setLoading(false))
   }, [])
@@ -35,9 +94,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = () => {
     const token = localStorage.getItem('cpo_token')
     localStorage.removeItem('cpo_token')
+    localStorage.removeItem(CPO_PERMISSIONS_KEY)
     clearGetCache()
     setUser(null)
-    // Notify backend so audit_log records logout (use saved token; request is fire-and-forget)
+    setPermissions({})
     if (token) {
       fetch(API_BASE + '/api/v4/auth/logout', {
         method: 'POST',
@@ -48,7 +108,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, setUser, logout }}>
+    <AuthContext.Provider value={{ user, permissions, loading, setUser, setAuth, logout }}>
       {children}
     </AuthContext.Provider>
   )

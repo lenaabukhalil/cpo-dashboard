@@ -7,6 +7,8 @@ import { Label } from './ui/label'
 import { cn } from '../lib/utils'
 import { updateOrg } from '../services/api'
 import { isValidLogoUrl } from './ChangeLogoModal'
+import { usePermission } from '../hooks/usePermission'
+import { useTranslation } from '../context/LanguageContext'
 
 type PreviewState = 'empty' | 'invalid-url' | 'loading' | 'loaded' | 'load-error'
 
@@ -25,6 +27,8 @@ export default function OrganizationLogoDialog({
   currentLogoUrl,
   onSaved,
 }: OrganizationLogoDialogProps) {
+  const { t } = useTranslation()
+  const canSaveLogo = usePermission('organizations.view', 'RW')
   const [urlInput, setUrlInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [previewState, setPreviewState] = useState<PreviewState>('empty')
@@ -69,6 +73,7 @@ export default function OrganizationLogoDialog({
   const handlePreviewError = () => setPreviewState('load-error')
 
   const handleSave = async () => {
+    if (!canSaveLogo) return
     setErrorMessage('')
     const trimmed = urlInput.trim()
     if (trimmed && !isValidLogoUrl(trimmed)) {
@@ -110,7 +115,8 @@ export default function OrganizationLogoDialog({
                 placeholder="https://example.com/logo.png"
                 value={urlInput}
                 onChange={(e) => handleUrlChange(e.target.value)}
-                disabled={saving}
+                disabled={saving || !canSaveLogo}
+                title={!canSaveLogo ? t('common.readOnlyAccess') : undefined}
                 aria-describedby="org-logo-url-hint"
                 className={cn('truncate', urlInput.trim() ? 'pr-10' : 'pr-3')}
               />
@@ -118,7 +124,8 @@ export default function OrganizationLogoDialog({
                 <button
                   type="button"
                   onClick={clearUrl}
-                  disabled={saving}
+                  disabled={saving || !canSaveLogo}
+                  title={!canSaveLogo ? t('common.readOnlyAccess') : undefined}
                   className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
                   aria-label="Clear URL"
                 >
@@ -183,7 +190,12 @@ export default function OrganizationLogoDialog({
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
           </Button>
-          <Button type="button" onClick={handleSave} disabled={saving}>
+          <Button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || !canSaveLogo}
+            title={!canSaveLogo ? t('common.readOnlyAccess') : undefined}
+          >
             {saving ? 'Saving…' : 'Save'}
           </Button>
         </DialogFooter>

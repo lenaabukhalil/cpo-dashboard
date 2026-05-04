@@ -328,6 +328,18 @@ const messages: Record<string, { en: string; ar: string }> = {
   'login.errorInvalidEmail': { en: 'Invalid email or user not found', ar: 'البريد الإلكتروني غير صحيح أو المستخدم غير موجود' },
   'login.errorWrongPassword': { en: 'Wrong password', ar: 'كلمة المرور غير صحيحة' },
   'login.errorGeneric': { en: 'Login failed', ar: 'فشل تسجيل الدخول' },
+  'login.errorServiceSlow': {
+    en: 'The service is taking too long. Please try again.',
+    ar: 'الخدمة تستغرق وقتاً أطول من المعتاد. يُرجى المحاولة مرة أخرى.',
+  },
+
+  'common.readOnlyAccess': { en: 'Read-only access', ar: 'وصول للقراءة فقط' },
+
+  'errors.forbiddenTitle': { en: 'Permission denied', ar: 'تم رفض الإذن' },
+  'errors.forbidden': {
+    en: "You don't have permission to do this.",
+    ar: 'ليس لديك صلاحية لتنفيذ هذا الإجراء.',
+  },
 
   // Settings
   'settings.title': { en: 'Settings', ar: 'الإعدادات' },

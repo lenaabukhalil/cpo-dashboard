@@ -5,6 +5,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from '../context/LanguageContext'
+import { usePermission } from '../hooks/usePermission'
 import { getOrg, updateOrg, type Org } from '../services/api'
 
 /** Normalize for dirty comparison: trim and treat empty string consistently */
@@ -15,6 +16,7 @@ function normalizedLogoUrl(value: string): string {
 export default function Settings() {
   const { user } = useAuth()
   const { t } = useTranslation()
+  const canWriteSettings = usePermission('settings.view', 'RW')
   const [, setOrg] = useState<Org | null>(null)
   /** Value last saved to server (source of truth for "original") */
   const [savedLogoUrl, setSavedLogoUrl] = useState('')
@@ -51,6 +53,7 @@ export default function Settings() {
   const handleSaveLogo = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault()
+      if (!canWriteSettings) return
       if (user?.organization_id == null || !isDirty) return
       setSavingLogo(true)
       setSaveSuccess(false)
@@ -73,7 +76,7 @@ export default function Settings() {
         .catch(() => setSaveSuccess(false))
         .finally(() => setSavingLogo(false))
     },
-    [user?.organization_id, logoUrl, isDirty]
+    [user?.organization_id, logoUrl, isDirty, canWriteSettings]
   )
 
   const handleDiscard = useCallback(() => {
@@ -132,7 +135,9 @@ export default function Settings() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => setIsEditingLogo(true)}
+                      disabled={!canWriteSettings}
+                      title={!canWriteSettings ? t('common.readOnlyAccess') : undefined}
+                      onClick={() => canWriteSettings && setIsEditingLogo(true)}
                       className="ml-auto flex-shrink-0"
                     >
                       {t('settings.changeLogo')}
@@ -155,6 +160,7 @@ export default function Settings() {
                       placeholder="https://example.com/logo.png"
                       value={logoUrl}
                       onChange={(e) => setLogoUrl(e.target.value)}
+                      disabled={!canWriteSettings}
                       className="max-w-md"
                       aria-describedby={isDirty ? 'org-logo-unsaved' : undefined}
                       autoFocus
@@ -186,7 +192,12 @@ export default function Settings() {
                         {t('settings.unsavedChanges')}
                       </span>
                       <div className="flex items-center gap-2">
-                        <Button type="submit" disabled={savingLogo} size="sm">
+                        <Button
+                          type="submit"
+                          disabled={savingLogo || !canWriteSettings}
+                          title={!canWriteSettings ? t('common.readOnlyAccess') : undefined}
+                          size="sm"
+                        >
                           {savingLogo ? t('settings.saving') : t('settings.saveChanges')}
                         </Button>
                         <Button
@@ -194,7 +205,8 @@ export default function Settings() {
                           variant="outline"
                           size="sm"
                           onClick={handleDiscard}
-                          disabled={savingLogo}
+                          disabled={savingLogo || !canWriteSettings}
+                          title={!canWriteSettings ? t('common.readOnlyAccess') : undefined}
                         >
                           {t('settings.discard')}
                         </Button>

@@ -1,17 +1,35 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Header from './Header'
 import { Sheet, SheetContent } from './ui/sheet'
-import { useLanguage } from '../context/LanguageContext'
+import { useLanguage, useTranslation } from '../context/LanguageContext'
 import { useNodeRedNotificationStream } from '../hooks/useNodeRedNotificationStream'
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [forbiddenMessage, setForbiddenMessage] = useState<string | null>(null)
   const { isRtl } = useLanguage()
+  const { t } = useTranslation()
   const sidebarSide = isRtl ? 'right' : 'left'
   const contentMargin = isRtl ? 'mr-0 lg:mr-64' : 'ml-0 lg:ml-64'
   useNodeRedNotificationStream()
+
+  useEffect(() => {
+    let dismissTimer: ReturnType<typeof window.setTimeout>
+    const onForbidden = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ message?: string }>).detail
+      const msg = (detail?.message && String(detail.message).trim()) || t('errors.forbidden')
+      window.clearTimeout(dismissTimer)
+      setForbiddenMessage(msg)
+      dismissTimer = window.setTimeout(() => setForbiddenMessage(null), 7000)
+    }
+    window.addEventListener('cpo-api-forbidden', onForbidden)
+    return () => {
+      window.removeEventListener('cpo-api-forbidden', onForbidden)
+      window.clearTimeout(dismissTimer)
+    }
+  }, [t])
 
   return (
     <div className="min-h-screen min-h-[100dvh] w-full max-w-[100vw] overflow-x-hidden bg-background" dir={isRtl ? 'rtl' : 'ltr'}>
@@ -33,6 +51,16 @@ export default function Layout() {
           <Sidebar mobile onOpenChange={setSidebarOpen} side={sidebarSide} />
         </SheetContent>
       </Sheet>
+
+      {forbiddenMessage ? (
+        <div
+          role="status"
+          className="fixed bottom-4 left-1/2 z-[100] max-w-md -translate-x-1/2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-foreground shadow-lg backdrop-blur-sm"
+        >
+          <p className="font-medium text-destructive">{t('errors.forbiddenTitle')}</p>
+          <p className="mt-1 text-muted-foreground">{forbiddenMessage}</p>
+        </div>
+      ) : null}
     </div>
   )
 }

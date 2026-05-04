@@ -37,13 +37,17 @@ function isManager(roleName: string | undefined): boolean {
   return (roleName || '').toLowerCase() === 'manager'
 }
 
+function isViewer(roleName: string | undefined): boolean {
+  return (roleName || '').toLowerCase() === 'viewer'
+}
+
 function RoleGuard({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth()
+  const { user, loading, permissions } = useAuth()
   const location = useLocation()
   if (loading || !user) return null
   const path = location.pathname.replace(/\/$/, '') || '/'
-  if (!canAccessPath(user.role_name, path)) {
-    if (isAccountant(user.role_name)) return <Navigate to="/" replace />
+  if (!canAccessPath(user.role_name, path, permissions)) {
+    if (isAccountant(user.role_name) || isViewer(user.role_name)) return <Navigate to="/" replace />
     if (isEngineer(user.role_name)) return <Navigate to="/" replace />
     if (isManager(user.role_name)) return <Navigate to="/" replace />
     if (isOperator(user.role_name)) return <Navigate to="/" replace />
