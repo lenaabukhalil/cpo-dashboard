@@ -96,16 +96,6 @@ const ACCOUNTANT_PATHS = ['/', '/org', '/list', '/reports']
 /** Viewer: read-focused default until backend maps dedicated codes (same footprint as accountant). */
 const VIEWER_PATHS = ACCOUNTANT_PATHS
 
-function canAccessPathByRole(role: Role, p: string): boolean {
-  if (role === 'accountant') return ACCOUNTANT_PATHS.includes(p)
-  if (role === 'viewer') return VIEWER_PATHS.includes(p)
-  if (role === 'engineer') return ENGINEER_PATHS.includes(p)
-  if (role === 'manager') return MANAGER_PATHS.includes(p)
-  if (role === 'operator') return OPERATOR_PATHS.includes(p)
-  if (role === 'admin') return ADMIN_PATHS.includes(p) && p !== '/billing'
-  return false
-}
-
 export function canAccessPath(
   roleName: string | undefined,
   path: string,
@@ -114,14 +104,25 @@ export function canAccessPath(
   const p = path.replace(/\/$/, '') || '/'
   if (p === '/') return true
 
-  const routeRule = ROUTE_PERMISSIONS[p]
-  if (routeRule) {
-    return hasPermission(permissions, routeRule.code, routeRule.access)
+  const rule = ROUTE_PERMISSIONS[p]
+  const hasPerms = Boolean(permissions && Object.keys(permissions).length > 0)
+  if (rule && hasPerms && permissions && permissions[rule.code] !== undefined) {
+    // Backend has provisioned this code → enforce strictly.
+    return hasPermission(permissions, rule.code, rule.access)
   }
+  // Permission code not yet provisioned on backend — fall back to role whitelist.
+  // TODO(rbac): remove this fallback once all codes in ROUTE_PERMISSIONS exist in
+  // ocpp_CSGO.Permissions and are assigned in Role_Permissions.
 
   const role = normalizeRole(roleName)
   if (!role) return false
-  return canAccessPathByRole(role, p)
+  if (role === 'accountant') return ACCOUNTANT_PATHS.includes(p)
+  if (role === 'viewer') return VIEWER_PATHS.includes(p)
+  if (role === 'engineer') return ENGINEER_PATHS.includes(p)
+  if (role === 'manager') return MANAGER_PATHS.includes(p)
+  if (role === 'operator') return OPERATOR_PATHS.includes(p)
+  if (role === 'admin') return ADMIN_PATHS.includes(p) && p !== '/billing'
+  return false
 }
 
 /** Nav items with optional group (section label). Order: A → B → C → D → E. */

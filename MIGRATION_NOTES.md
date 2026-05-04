@@ -46,9 +46,21 @@ Confirm each exists in `ocpp_CSGO.Permissions` and matches enforcement on the co
 
 1. **`npm run build`** — TypeScript + Vite build completes (no `lint` script in this repo).
 2. **Login** — Valid user: `cpo_token` + `cpo_permissions` populated; redirect to `/`.
-3. **Sidebar** — Only links the user’s permission map allows (plus `/`); routes without a mapped code still use the legacy role path lists.
+3. **Sidebar** — Filter uses `canAccessPath`: when the backend has provisioned a route’s permission code on the user’s map, that wins; otherwise the legacy role `*_PATHS` lists apply (see **Fallback period** below).
 4. **Hard refresh** on e.g. `/reports` while logged in — Session restored via `me()` + stored permissions; no bounce to `/login` when the token and map are valid.
 5. **Logout** — Clears `cpo_token`, `cpo_permissions`, and GET cache (`clearGetCache()`).
-6. **Read-only** — User with `R` on `users.manage` or `settings.view`: pages open where routed with `R`; write controls disabled with “Read-only access” tooltip/title.
+6. **Read-only** — Once the map includes the relevant codes, `R` vs `RW` is enforced in the UI via `usePermission`; until then write controls stay enabled and the API returns 403 if insufficient.
 7. **403 + `requiredPermission`** — Toast-style banner; user stays logged in.
 8. **Timeout** — Slow login: translated “service is taking too long” message; form fields unchanged.
+
+## Fallback period
+
+`ROUTE_PERMISSIONS` uses placeholder `code` strings intended to match `ocpp_CSGO.Permissions.code` once the backend team adds them and assigns them in `Role_Permissions`. Until those rows exist, JWTs may carry a non-empty `permissions` object that still omits our UI codes—so **`canAccessPath`** only enforces `hasPermission` when the user’s map actually contains that code; otherwise it falls through to the pre-migration role whitelist (same sidebar as before). **`usePermission`** likewise treats an empty map or a missing key as “allow” so buttons are not stuck disabled; mutations are enforced by the API (`403` + `requiredPermission` → toast).
+
+When the real `code` values are confirmed, update `ROUTE_PERMISSIONS` to match; provisioned tokens will then hit the strict branch automatically. The fallback remains harmless until every role’s permission set is complete.
+
+Backend can list current permission codes with:
+
+```sql
+SELECT code, description FROM ocpp_CSGO.Permissions ORDER BY code;
+```
