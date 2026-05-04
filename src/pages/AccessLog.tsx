@@ -113,8 +113,11 @@ export default function AccessLog() {
       const a = document.createElement('a')
       a.href = url
       a.download = filename || `access-log-${new Date().toISOString().slice(0, 10)}.${format === 'pdf' && blob.type?.indexOf('html') !== -1 ? 'html' : format}`
+      a.style.display = 'none'
+      document.body.appendChild(a)
       a.click()
-      URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
       if (format === 'pdf' && (blob.type?.indexOf('html') !== -1 || (filename && filename.toLowerCase().endsWith('.html')))) {
         setExportHint(t('audit.exportPdfAsHtmlHint'))
         setTimeout(() => setExportHint(null), 8000)
