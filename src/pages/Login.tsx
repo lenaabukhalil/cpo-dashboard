@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from '../context/LanguageContext'
-import { login, type AuthUser } from '../services/api'
+import { login, type AuthUser, type PermissionMap } from '../services/api'
 import { Card, CardContent, CardHeader } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -45,8 +45,8 @@ export default function Login() {
     const token = (res as { token?: string }).token ?? (res as { data?: { token?: string } }).data?.token
     const userObj = (res as { user?: unknown }).user ?? (res as { data?: { user?: unknown } }).data?.user
     const perms =
-      (res as { permissions?: Record<string, 'R' | 'RW'> }).permissions ??
-      (res as { data?: { permissions?: Record<string, 'R' | 'RW'> } }).data?.permissions ??
+      (res as { permissions?: PermissionMap }).permissions ??
+      (res as { data?: { permissions?: PermissionMap } }).data?.permissions ??
       {}
     if (res.success && token) {
       localStorage.setItem('cpo_token', token)

@@ -120,6 +120,17 @@ export default function NotificationDetail() {
     return <span className="text-sm text-muted-foreground">—</span>
   }, [notification])
 
+  const messageText = useMemo(() => {
+    if (!notification) return '—'
+    return notification.message && notification.message.trim() && notification.message.trim() !== '—'
+      ? notification.message.trim()
+      : notification.online === true
+        ? 'Charger is online'
+        : notification.online === false
+          ? 'Charger is offline'
+          : '—'
+  }, [notification])
+
   // TODO: add permission guard for notifications read action when granular permission component is available.
   return (
     <div className="space-y-6">
@@ -200,9 +211,7 @@ export default function NotificationDetail() {
             </dl>
             <div className="mt-4 rounded-lg border border-border bg-card px-4 py-3">
               <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Message</p>
-              <p className="whitespace-pre-wrap leading-relaxed text-foreground">
-                {displayField(notification.message)}
-              </p>
+              <p className="whitespace-pre-wrap leading-relaxed text-foreground">{messageText}</p>
             </div>
           </CardContent>
         </Card>

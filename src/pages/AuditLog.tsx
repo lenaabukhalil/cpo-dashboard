@@ -4,7 +4,7 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { createPortal } from 'react-dom'
-import { Activity, Download, Edit, Filter, LogIn, PlusCircle, RefreshCw, X } from 'lucide-react'
+import { Activity, Download, Edit, Filter, LogIn, LogOut, Pencil, Plus, PlusCircle, RefreshCw, Trash2, X } from 'lucide-react'
 import {
   ResponsiveContainer,
   BarChart,
@@ -24,14 +24,15 @@ import { canAccessAuditLog, canAccessAuditLogFull } from '../lib/permissions'
 import {
   getAuditLogs,
   exportAuditLogs,
-  getAccessLogs,
-  exportAccessLogs,
   type AuditLogEntry,
   type AuditLogFilters,
-  type AccessLogEntry,
-  type AccessLogFilters,
 } from '../services/api'
-import { getAuditLogSummary, getAccessLogSummary, getAuditLogDetailSections } from '../lib/auditLogSummary'
+import {
+  formatEntityType,
+  getAuditLogSummary,
+  getAuditLogDetailSections,
+  isAuthAuditRow,
+} from '../lib/auditLogSummary'
 import { formatDateTime24, type DateInput } from '../lib/dateFormat'
 import { TablePagination } from '../components/TablePagination'
 import { AppSelect } from '../components/shared/AppSelect'
@@ -41,9 +42,15 @@ import { cn } from '../lib/utils'
 const PAGE_SIZES = [10, 25, 50, 100, 200]
 const ENTITY_TYPES = [
   { value: '', labelKey: 'common.all' },
-  { value: 'org_logo', labelKey: 'audit.entityOrgLogo' },
-  { value: 'maintenance_ticket', labelKey: 'audit.entityMaintenanceTicket' },
-  { value: 'user', labelKey: 'audit.entityUser' },
+  { value: 'auth', labelKey: 'audit.entity.auth' },
+  { value: 'organization', labelKey: 'audit.entity.organization' },
+  { value: 'org_logo', labelKey: 'audit.entity.org_logo' },
+  { value: 'user', labelKey: 'audit.entity.user' },
+  { value: 'maintenance_ticket', labelKey: 'audit.entity.maintenance_ticket' },
+  { value: 'location', labelKey: 'audit.entity.location' },
+  { value: 'charger', labelKey: 'audit.entity.charger' },
+  { value: 'connector', labelKey: 'audit.entity.connector' },
+  { value: 'tariff', labelKey: 'audit.entity.tariff' },
 ] as const
 
 const AUDIT_ACTION_OPTIONS = [
@@ -51,27 +58,19 @@ const AUDIT_ACTION_OPTIONS = [
   { value: 'create', labelKey: 'audit.actionCreate' },
   { value: 'update', labelKey: 'audit.actionUpdate' },
   { value: 'delete', labelKey: 'audit.actionDelete' },
-  { value: 'notification', labelKey: 'audit.actionNotification' },
+  { value: 'login', labelKey: 'audit.actionLogin' },
+  { value: 'logout', labelKey: 'audit.actionLogout' },
 ] as const
 
-const ACCESS_ACTION_OPTIONS = [
-  { value: '', labelKey: 'common.all' },
-  { value: 'login', labelKey: 'accessLog.actionLogin' },
-  { value: 'logout', labelKey: 'accessLog.actionLogout' },
-] as const
+type TabId = 'audit' | 'activity'
 
-type TabId = 'audit' | 'access' | 'activity'
-
-type ActivityItem =
-  | { kind: 'audit'; ts: string; row: AuditLogEntry }
-  | { kind: 'access'; ts: string; row: AccessLogEntry }
+type ActivityItem = { ts: string; row: AuditLogEntry }
 
 type ActivityCategory = 'access' | 'users' | 'maintenance' | 'infrastructure' | 'organization'
 type ActivityRange = '24h' | '7d' | '30d' | '60d'
 
 type ActivityFeedCard = {
   id: string
-  kind: 'audit' | 'access'
   category: ActivityCategory
   ts: string
   actor: string
@@ -81,21 +80,55 @@ type ActivityFeedCard = {
   title: string
   summary: string
   changedFieldChips?: string[]
-  row: AuditLogEntry | AccessLogEntry
+  row: AuditLogEntry
 }
 
-function actionLabelAccess(action: string, t: (k: string) => string): string {
-  const map: Record<string, string> = {
-    login: 'accessLog.actionLogin',
-    logout: 'accessLog.actionLogout',
-    failed_login: 'accessLog.actionFailedLogin',
-    password_reset: 'accessLog.actionPasswordReset',
-    token_refresh: 'accessLog.actionTokenRefresh',
-    session_expired: 'accessLog.actionSessionExpired',
-    mfa_login: 'accessLog.actionMfaLogin',
-    mfa_failed: 'accessLog.actionMfaFailed',
-  }
-  return map[action] ? t(map[action]) : action
+function AuditActionBadge({ action, t }: { action: string; t: (k: string) => string }) {
+  const label =
+    action === 'login'
+      ? t('audit.actionLogin')
+      : action === 'logout'
+        ? t('audit.actionLogout')
+        : action === 'create'
+          ? t('audit.actionCreate')
+          : action === 'update'
+            ? t('audit.actionUpdate')
+            : action === 'delete'
+              ? t('audit.actionDelete')
+              : action
+
+  const style =
+    action === 'login'
+      ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
+      : action === 'logout'
+        ? 'bg-slate-100 text-slate-700 dark:bg-slate-800/50 dark:text-slate-300'
+        : action === 'create'
+          ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'
+          : action === 'update'
+            ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+            : action === 'delete'
+              ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
+              : 'bg-muted text-muted-foreground'
+
+  const icon =
+    action === 'login' ? (
+      <LogIn className="h-3 w-3" />
+    ) : action === 'logout' ? (
+      <LogOut className="h-3 w-3" />
+    ) : action === 'create' ? (
+      <Plus className="h-3 w-3" />
+    ) : action === 'update' ? (
+      <Pencil className="h-3 w-3" />
+    ) : action === 'delete' ? (
+      <Trash2 className="h-3 w-3" />
+    ) : null
+
+  return (
+    <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium', style)}>
+      {icon}
+      {label}
+    </span>
+  )
 }
 
 export default function AuditLog() {
@@ -120,23 +153,9 @@ export default function AuditLog() {
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportHint, setExportHint] = useState<string | null>(null)
 
-  // Access tab state
-  const [accFrom, setAccFrom] = useState(defaultFrom)
-  const [accTo, setAccTo] = useState(defaultTo)
-  const [accAction, setAccAction] = useState<string>('')
-  const [accPage, setAccPage] = useState(1)
-  const [accPerPage, setAccPerPage] = useState(10)
-  const [accEntries, setAccEntries] = useState<AccessLogEntry[]>([])
-  const [accTotal, setAccTotal] = useState(0)
-  const [accLoading, setAccLoading] = useState(false)
-  const [accExporting, setAccExporting] = useState<string | null>(null)
-  const [accExportError, setAccExportError] = useState<string | null>(null)
-  const [accExportHint, setAccExportHint] = useState<string | null>(null)
   const [hasAppliedAudit, setHasAppliedAudit] = useState(false)
-  const [hasAppliedAccess, setHasAppliedAccess] = useState(false)
   /** Increment when user clicks Apply so useEffect refetches with current filters (action/entityType). */
   const [auditFilterVersion, setAuditFilterVersion] = useState(0)
-  const [accessFilterVersion, setAccessFilterVersion] = useState(0)
   /** When API returns 500 or success: false, show this instead of generic "no results". */
   const [auditError, setAuditError] = useState<string | null>(null)
   /** True when user clicked "Latest 10": show only 10 total (no pagination beyond that). */
@@ -170,7 +189,7 @@ export default function AuditLog() {
     setLoading(true)
     setAuditError(null)
     const filters: AuditLogFilters = { from, to, limit: perPage, offset: (page - 1) * perPage }
-    if (action) filters.action = action as 'create' | 'update' | 'delete' | 'notification'
+    if (action) filters.action = action
     if (entityType) filters.entity_type = entityType
     if (user?.organization_id != null && !canAccessAuditLogFull(user?.role_name)) filters.organization_id = user.organization_id
     getAuditLogs(filters)
@@ -195,31 +214,9 @@ export default function AuditLog() {
       .finally(() => setLoading(false))
   }, [canAccess, from, to, action, entityType, page, perPage, isLatest10, user?.organization_id])
 
-  const loadAccess = useCallback(() => {
-    if (!canAccess) return
-    setAccLoading(true)
-    const filters: AccessLogFilters = { from: accFrom, to: accTo, limit: accPerPage, offset: (accPage - 1) * accPerPage }
-    if (accAction) filters.action = accAction
-    if (user?.organization_id != null && !canAccessAuditLogFull(user?.role_name)) filters.organization_id = user.organization_id
-    getAccessLogs(filters)
-      .then((res) => {
-        if (!res.success) { setAccEntries([]); setAccTotal(0); return }
-        const r = res as { data?: AccessLogEntry[]; total?: number }
-        const list = Array.isArray(r.data) ? r.data : []
-        setAccEntries(list)
-        setAccTotal(typeof r.total === 'number' ? r.total : list.length)
-      })
-      .catch(() => { setAccEntries([]); setAccTotal(0) })
-      .finally(() => setAccLoading(false))
-  }, [canAccess, accFrom, accTo, accAction, accPage, accPerPage, user?.organization_id])
-
   useEffect(() => {
     if (activeTab === 'audit' && hasAppliedAudit) loadAudit()
   }, [activeTab, hasAppliedAudit, page, perPage, auditFilterVersion, loadAudit])
-
-  useEffect(() => {
-    if (activeTab === 'access' && hasAppliedAccess) loadAccess()
-  }, [activeTab, hasAppliedAccess, accPage, accPerPage, accessFilterVersion, loadAccess])
 
   const loadActivity = useCallback(() => {
     if (!canAccess) return
@@ -254,29 +251,12 @@ export default function AuditLog() {
       return out
     }
 
-    const fetchAllAccess = async () => {
-      const out: AccessLogEntry[] = []
-      let offset = 0
-      while (out.length < MAX_RECORDS_PER_STREAM) {
-        const res = await getAccessLogs({ limit: PAGE_LIMIT, offset, from, to, ...orgScoped })
-        if (!res.success) throw new Error((res as { message?: string }).message || t('common.error'))
-        const list = Array.isArray((res as { data?: AccessLogEntry[] }).data) ? ((res as { data?: AccessLogEntry[] }).data as AccessLogEntry[]) : []
-        if (list.length === 0) break
-        out.push(...list)
-        if (list.length < PAGE_LIMIT) break
-        offset += PAGE_LIMIT
-      }
-      return out
-    }
-
-    Promise.all([fetchAllAudit(), fetchAllAccess()])
-      .then(([aRes, xRes]) => {
-        const aList = Array.isArray(aRes) ? aRes : []
-        const xList = Array.isArray(xRes) ? xRes : []
-        const merged: ActivityItem[] = [
-          ...aList.map((row) => ({ kind: 'audit' as const, ts: row.timestamp, row })),
-          ...xList.map((row) => ({ kind: 'access' as const, ts: row.timestamp, row })),
-        ]
+    fetchAllAudit()
+      .then((aList) => {
+        const merged: ActivityItem[] = (Array.isArray(aList) ? aList : []).map((row) => ({
+          ts: row.timestamp,
+          row,
+        }))
         merged.sort((p, q) => {
           const pt = new Date(p.ts).getTime()
           const qt = new Date(q.ts).getTime()
@@ -285,7 +265,6 @@ export default function AuditLog() {
           if (!Number.isFinite(qt)) return -1
           return qt - pt
         })
-        // Keep all merged items for the stable window; UI will filter by selected range.
         setActivityItems(merged)
       })
       .catch((e) => {
@@ -319,7 +298,7 @@ export default function AuditLog() {
       const exportFilters: Omit<AuditLogFilters, 'limit' | 'offset'> = {
         from,
         to,
-        action: action ? (action as 'create' | 'update' | 'delete') : undefined,
+        action: action || undefined,
         entity_type: entityType || undefined,
       }
       if (user?.organization_id != null && !canAccessAuditLogFull(user?.role_name)) exportFilters.organization_id = user.organization_id
@@ -341,26 +320,6 @@ export default function AuditLog() {
     finally { setExporting(null) }
   }
 
-  const handleExportAccess = async (format: 'csv' | 'pdf') => {
-    setAccExportError(null); setAccExportHint(null); setAccExporting(format)
-    try {
-      const exportFilters: Omit<AccessLogFilters, 'limit' | 'offset'> = { from: accFrom, to: accTo, action: accAction || undefined }
-      if (user?.organization_id != null && !canAccessAuditLogFull(user?.role_name)) exportFilters.organization_id = user.organization_id
-      const { blob, filename } = await exportAccessLogs(format, exportFilters)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename || `access-log-${new Date().toISOString().slice(0, 10)}.${format === 'pdf' && blob.type?.indexOf('html') !== -1 ? 'html' : format}`
-      a.click()
-      URL.revokeObjectURL(url)
-      if (format === 'pdf' && (blob.type?.indexOf('html') !== -1 || (filename && filename.toLowerCase().endsWith('.html')))) {
-        setAccExportHint(t('audit.exportPdfAsHtmlHint'))
-        setTimeout(() => setAccExportHint(null), 8000)
-      }
-    } catch (e) { setAccExportError(e instanceof Error ? e.message : t('audit.exportError')) }
-    finally { setAccExporting(null) }
-  }
-
   if (!canAccess) {
     return (
       <div className="p-6">
@@ -370,13 +329,11 @@ export default function AuditLog() {
   }
 
   const tabs = [
-    { id: 'audit' as TabId, label: t('audit.title') },
-    { id: 'access' as TabId, label: t('accessLog.title') },
+    { id: 'audit' as TabId, label: t('audit.tabAuditAndAccess') },
     { id: 'activity' as TabId, label: t('audit.activityFeed') },
   ]
   const entityTypeOptions = ENTITY_TYPES.map((e) => ({ value: e.value, label: t(e.labelKey) }))
   const actionOptions = AUDIT_ACTION_OPTIONS.map((a) => ({ value: a.value, label: t(a.labelKey) }))
-  const accActionOptions = ACCESS_ACTION_OPTIONS.map((a) => ({ value: a.value, label: t(a.labelKey) }))
 
   const formatRelativeTime = (ts: string) => {
     const ms = new Date(ts).getTime()
@@ -394,51 +351,38 @@ export default function AuditLog() {
   // If none exist, fall back to access login/logout, then any activity.
   const latestImportantItem =
     activityItems.find((it) => {
-      if (it.kind !== 'audit') return false
-      const act = (it.row as AuditLogEntry).action
+      const act = it.row.action
       return ['update', 'create', 'delete', 'notification'].includes(act)
     }) ||
-    activityItems.find((it) => {
-      if (it.kind !== 'access') return false
-      return ['login', 'logout'].includes((it.row as AccessLogEntry).action)
-    }) ||
+    activityItems.find((it) => ['login', 'logout'].includes(it.row.action)) ||
     activityItems[0]
 
   const latestImportant = latestImportantItem
     ? (() => {
-      if (latestImportantItem.kind === 'access') {
-        const row = latestImportantItem.row as AccessLogEntry
-        const actor = row.user_name ?? (row.user_id != null ? String(row.user_id) : 'Unknown user')
-        const action = row.action || 'activity'
-        const verb = action === 'login' ? 'logged in' : action === 'logout' ? 'logged out' : actionLabelAccess(action, t)
-        return {
-          kind: 'access' as const,
-          row,
-          actor,
-          eventType: actionLabelAccess(action, t),
-          summary: getAccessLogSummary(row, t),
-          entity: row.entity_type || 'access',
-          ts: row.timestamp,
-          message: `Latest activity: ${actor} ${verb}`,
-        }
-      }
-      const row = latestImportantItem.row as AuditLogEntry
+      const row = latestImportantItem.row
       const actor = row.user_name ?? (row.user_id != null ? String(row.user_id) : 'Unknown user')
       const eventType =
-        row.action === 'update' ? t('audit.actionUpdate')
-          : row.action === 'create' ? t('audit.actionCreate')
-            : row.action === 'delete' ? t('audit.actionDelete')
-              : row.action === 'notification' ? t('audit.actionNotification')
-                : row.action
+        row.action === 'update'
+          ? t('audit.actionUpdate')
+          : row.action === 'create'
+            ? t('audit.actionCreate')
+            : row.action === 'delete'
+              ? t('audit.actionDelete')
+              : row.action === 'login'
+                ? t('audit.actionLogin')
+                : row.action === 'logout'
+                  ? t('audit.actionLogout')
+                  : row.action
+      const summary = getAuditLogSummary(row, t)
       return {
-        kind: 'audit' as const,
         row,
         actor,
         eventType,
-        summary: getAuditLogSummary(row, t),
-        entity: row.entity_type || 'record',
+        summary,
+        entity: formatEntityType(row.entity_type || 'record', t),
         ts: row.timestamp,
-        message: `Latest ${eventType.toLowerCase()}: ${getAuditLogSummary(row, t)}`,
+        message: `Latest activity: ${summary}`,
+        isAuth: isAuthAuditRow(row),
       }
     })()
     : null
@@ -448,11 +392,7 @@ export default function AuditLog() {
       <div>
         <h1 className="text-2xl font-semibold text-foreground">{t('audit.title')}</h1>
         <p className="text-muted-foreground mt-1">
-          {activeTab === 'audit'
-            ? t('audit.subtitle')
-            : activeTab === 'access'
-              ? t('accessLog.subtitle')
-              : t('audit.activityFeedSubtitle')}
+          {activeTab === 'audit' ? t('audit.subtitleAuditAndAccess') : t('audit.activityFeedSubtitle')}
         </p>
       </div>
 
@@ -487,7 +427,7 @@ export default function AuditLog() {
           <Card>
             <CardHeader className="pb-2">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <CardTitle>{t('audit.title')}</CardTitle>
+                <CardTitle>{t('audit.tabAuditAndAccess')}</CardTitle>
                 {auditError && <p className="text-destructive text-sm w-full mb-2">{auditError}</p>}
                 {exportError && <p className="text-destructive text-sm w-full mb-2">{exportError}</p>}
                 {exportHint && <p className="text-muted-foreground text-sm w-full mb-2 max-w-md">{exportHint}</p>}
@@ -502,7 +442,7 @@ export default function AuditLog() {
                 <div className="flex items-center justify-center py-12 text-muted-foreground"><RefreshCw className="h-8 w-8 animate-spin" /></div>
               ) : entries.length === 0 ? (
                 <p className={cn('py-8 text-center', auditError ? 'text-destructive font-medium' : 'text-muted-foreground')}>
-                  {auditError || t('audit.noResults')}
+                  {auditError || t('audit.empty')}
                 </p>
               ) : (
                 <>
@@ -528,11 +468,9 @@ export default function AuditLog() {
                             <td className="p-3 whitespace-nowrap">{formatDateTime24(row.timestamp)}</td>
                             <td className="p-3">{row.user_name ?? (row.user_id != null ? String(row.user_id) : '—')}</td>
                             <td className="p-3">
-                              <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', row.action === 'create' && 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300', row.action === 'update' && 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300', row.action === 'delete' && 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300', row.action === 'notification' && 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300')}>
-                                {row.action === 'create' && t('audit.actionCreate')}{row.action === 'update' && t('audit.actionUpdate')}{row.action === 'delete' && t('audit.actionDelete')}{row.action === 'notification' && t('audit.actionNotification')}{!['create', 'update', 'delete', 'notification'].includes(row.action) && row.action}
-                              </span>
+                              <AuditActionBadge action={row.action} t={t} />
                             </td>
-                            <td className="p-3">{row.entity_type}</td>
+                            <td className="p-3">{formatEntityType(row.entity_type, t)}</td>
                             <td className="p-3 font-mono text-xs" title={t('audit.entityIdTooltipAudit')}>{row.entity_id ?? '—'}</td>
                             <td className="p-3 text-muted-foreground">
                               <span className="max-w-[200px] truncate inline-block align-middle">{getAuditLogSummary(row, t)}</span>
@@ -550,85 +488,6 @@ export default function AuditLog() {
         </>
       )}
 
-      {activeTab === 'access' && (
-        <>
-          <Card>
-            <CardHeader className="pb-4">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <CardTitle className="flex items-center gap-2"><Filter className="h-5 w-5" />{t('audit.filters')}</CardTitle>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={() => { setAccFrom(defaultFrom); setAccTo(defaultTo); setAccAction(''); setAccPage(1); setHasAppliedAccess(false); setAccEntries([]); setAccTotal(0) }}>{t('audit.clearFilters')}</Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="space-y-2"><Label>{t('audit.from')}</Label><Input type="date" value={accFrom} onChange={(e) => setAccFrom(e.target.value)} placeholder={t('common.datePlaceholder')} /></div>
-                <div className="space-y-2"><Label>{t('audit.to')}</Label><Input type="date" value={accTo} onChange={(e) => setAccTo(e.target.value)} placeholder={t('common.datePlaceholder')} /></div>
-                <div className="space-y-2"><Label>{t('audit.action')}</Label><AppSelect options={accActionOptions} value={accAction} onChange={setAccAction} size="default" className="w-full" /></div>
-              </div>
-              <Button onClick={() => { setAccPage(1); setHasAppliedAccess(true); setAccessFilterVersion((v) => v + 1); }} disabled={!accFrom.trim() || !accTo.trim()}>{t('audit.applyFilters')}</Button>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <CardTitle>{t('accessLog.title')}</CardTitle>
-                {accExportError && <p className="text-destructive text-sm w-full mb-2">{accExportError}</p>}
-                {accExportHint && <p className="text-muted-foreground text-sm w-full mb-2 max-w-md">{accExportHint}</p>}
-                <div className="flex gap-2 flex-wrap">
-                  <Button variant="outline" size="sm" onClick={() => handleExportAccess('csv')} disabled={!!accExporting}><Download className="h-4 w-4" />{t('audit.exportCsv')}</Button>
-                  <Button variant="outline" size="sm" onClick={() => handleExportAccess('pdf')} disabled={!!accExporting}><Download className="h-4 w-4" />{t('audit.exportPdf')}</Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {accLoading && accEntries.length === 0 ? (
-                <div className="flex items-center justify-center py-12 text-muted-foreground"><RefreshCw className="h-8 w-8 animate-spin" /></div>
-              ) : accEntries.length === 0 ? (
-                <p className="py-8 text-center text-muted-foreground">{t('accessLog.noResults')}</p>
-              ) : (
-                <>
-                  <div className="overflow-x-auto -mx-2 table-wrap table-wrapper">
-                    <table className="w-full border-collapse text-sm min-w-[600px]">
-                      <thead>
-                        <tr className="border-b border-border">
-                          <th className="text-left p-3 font-medium">{t('audit.timestamp')}</th>
-                          <th className="text-left p-3 font-medium">{t('audit.user')}</th>
-                          <th className="text-left p-3 font-medium">{t('audit.action')}</th>
-                          <th className="text-left p-3 font-medium">{t('audit.entityType')}</th>
-                          <th className="text-left p-3 font-medium" title={t('audit.entityIdTooltipAccess')}>{t('audit.entityId')}</th>
-                          <th className="text-left p-3 font-medium">{t('audit.details')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {accEntries.map((row) => (
-                          <tr key={row.id} className="border-b border-border/70 hover:bg-muted/30">
-                            <td className="p-3 whitespace-nowrap">{formatDateTime24(row.timestamp)}</td>
-                            <td className="p-3">{row.user_name ?? (row.user_id != null ? String(row.user_id) : '—')}</td>
-                            <td className="p-3">
-                              <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', row.action === 'login' && 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300', row.action === 'logout' && 'bg-slate-100 text-slate-700 dark:bg-slate-800/50 dark:text-slate-300', row.action === 'failed_login' && 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300', row.action === 'password_reset' && 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300', row.action === 'token_refresh' && 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300', row.action === 'session_expired' && 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300', !['login', 'logout', 'failed_login', 'password_reset', 'token_refresh', 'session_expired', 'mfa_login', 'mfa_failed'].includes(row.action) && 'bg-muted text-muted-foreground')}>
-                                {actionLabelAccess(row.action, t)}
-                              </span>
-                            </td>
-                            <td className="p-3">{row.entity_type}</td>
-                            <td className="p-3 font-mono text-xs" title={t('audit.entityIdTooltipAccess')}>{row.entity_id ?? '—'}</td>
-                            <td className="p-3 text-muted-foreground">
-                              <span className="max-w-[200px] truncate inline-block align-middle">{getAccessLogSummary(row, t)}</span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <TablePagination total={accTotal} page={accPage} perPage={accPerPage} onPageChange={setAccPage} onPerPageChange={(n) => { setAccPerPage(n); setAccPage(1); }} pageSizeOptions={PAGE_SIZES} />
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </>
-      )}
 
       {activeTab === 'activity' && (
         <>
@@ -726,40 +585,25 @@ export default function AuditLog() {
               }
 
               const categoryForAudit = (entityType?: string, action?: string): ActivityCategory => {
+                if (entityType === 'auth' || action === 'login' || action === 'logout' || action === 'failed_login') {
+                  return 'access'
+                }
                 if (action === 'notification' || entityType === 'notification') return 'organization'
                 if (entityType === 'user' || entityType === 'role_permissions') return 'users'
                 if (entityType === 'maintenance_ticket') return 'maintenance'
-                if (entityType === 'org' || entityType === 'org_logo') return 'organization'
-                if (entityType === 'location' || entityType === 'charger' || entityType === 'connector' || entityType === 'tariff') return 'infrastructure'
+                if (entityType === 'org' || entityType === 'org_logo' || entityType === 'organization') return 'organization'
+                if (entityType === 'location' || entityType === 'charger' || entityType === 'connector' || entityType === 'tariff') {
+                  return 'infrastructure'
+                }
                 return 'organization'
               }
 
               const cardFromItem = (it: ActivityItem): ActivityFeedCard => {
-                if (it.kind === 'access') {
-                  const r = it.row as AccessLogEntry
-                  const actor = r.user_name ?? (r.user_id != null ? String(r.user_id) : '—')
-                  const title = getAccessLogSummary(r, t)
-                  const action = (r.action || '').toString()
-                  return {
-                    id: `access-${r.id}`,
-                    kind: 'access',
-                    category: 'access',
-                    ts: it.ts,
-                    actor,
-                    action,
-                    entityType: r.entity_type,
-                    entityId: r.entity_id,
-                    title,
-                    summary: title,
-                    row: r,
-                  }
-                }
-                const r = it.row as AuditLogEntry
+                const r = it.row
                 const actor = r.user_name ?? (r.user_id != null ? String(r.user_id) : '—')
                 const action = (r.action || '').toString()
                 const entityType = (r.entity_type || '').toString()
                 const summary = getAuditLogSummary(r, t)
-                const title = summary
                 const category = categoryForAudit(entityType, action)
                 const changedFieldChips =
                   action === 'update'
@@ -769,14 +613,13 @@ export default function AuditLog() {
                     : undefined
                 return {
                   id: `audit-${r.id}`,
-                  kind: 'audit',
                   category,
                   ts: it.ts,
                   actor,
                   action,
                   entityType,
                   entityId: r.entity_id,
-                  title,
+                  title: summary,
                   summary,
                   changedFieldChips,
                   row: r,
@@ -786,17 +629,14 @@ export default function AuditLog() {
               const cardsAll = activityItems.filter((it) => inRange(it.ts)).map(cardFromItem)
 
               const countBy = (pred: (c: ActivityFeedCard) => boolean) => cardsAll.filter(pred).length
-              const updates = countBy((c) => c.kind === 'audit' && c.action === 'update')
-              const logins = countBy((c) => c.kind === 'access' && c.action === 'login')
+              const updates = countBy((c) => c.action === 'update')
+              const logins = countBy((c) => c.action === 'login')
 
               const badgeClass = (c: ActivityFeedCard) => {
-                if (c.kind === 'access') {
-                  if (c.action === 'login') return 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300'
-                  if (c.action === 'logout') return 'bg-slate-100 text-slate-700 dark:bg-slate-800/50 dark:text-slate-300'
-                  if (c.action === 'failed_login') return 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300'
-                  if (c.action === 'password_reset') return 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300'
-                  return 'bg-muted text-muted-foreground'
-                }
+                if (c.action === 'login') return 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
+                if (c.action === 'logout') return 'bg-slate-100 text-slate-700 dark:bg-slate-800/50 dark:text-slate-300'
+                if (c.action === 'failed_login') return 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300'
+                if (c.action === 'password_reset') return 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300'
                 if (c.action === 'create') return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
                 if (c.action === 'update') return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
                 if (c.action === 'delete') return 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300'
@@ -829,7 +669,8 @@ export default function AuditLog() {
               const actionTotals = actionKeys.map((k) => ({ k, n: actionCount(k) }))
 
               const getActivityLabel = (c: ActivityFeedCard) => {
-                if (c.kind === 'access') return actionLabelAccess(c.action, t)
+                if (c.action === 'login') return t('audit.actionLogin')
+                if (c.action === 'logout') return t('audit.actionLogout')
                 if (c.action === 'create') return t('audit.actionCreate')
                 if (c.action === 'update') return t('audit.actionUpdate')
                 if (c.action === 'delete') return t('audit.actionDelete')
@@ -1159,7 +1000,6 @@ export default function AuditLog() {
                         ? (() => {
                             const m = new Map<string, { actor: string; count: number; lastMs: number; lastTs: string }>()
                             cardsAll.forEach((c) => {
-                              if (c.kind !== 'access') return
                               if (String(c.action).toLowerCase() !== 'login') return
                               const actor = (c.actor || '—').toString().trim() || '—'
                               const ms = new Date(c.ts).getTime()
@@ -1262,19 +1102,20 @@ export default function AuditLog() {
                                 ) : (
                                   <div className="space-y-2">
                                     {pageItemsCards.map((c) => {
-                                      const isAudit = c.kind === 'audit'
-                                      const entityLine = [c.entityType, c.entityId].filter(Boolean).join(' · ')
+                                      const entityLine = [
+                                        c.entityType ? formatEntityType(c.entityType, t) : '',
+                                        c.entityId,
+                                      ]
+                                        .filter(Boolean)
+                                        .join(' · ')
                                       return (
                                         <button
                                           key={c.id}
                                           type="button"
-                                          onClick={() => {
-                                            if (isAudit) setSelectedAuditRow(c.row as AuditLogEntry)
-                                          }}
+                                          onClick={() => setSelectedAuditRow(c.row)}
                                           className={cn(
                                             'w-full text-left rounded-lg border border-border/60 bg-background/40 px-3 py-2 transition-colors',
                                             'hover:bg-muted/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                                            !isAudit && 'cursor-default'
                                           )}
                                         >
                                           <div className="flex items-center justify-between gap-2">
@@ -1360,17 +1201,15 @@ export default function AuditLog() {
                 <div><span className="text-muted-foreground">Summary: </span><span className="text-foreground">{latestImportant.summary}</span></div>
               </div>
               <div className="p-4 border-t border-border flex items-center justify-end gap-2">
-                {latestImportant.kind === 'audit' ? (
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setSelectedAuditRow(latestImportant.row as AuditLogEntry)
-                      setLatestActivityDetailsOpen(false)
-                    }}
-                  >
-                    Inspect log entry
-                  </Button>
-                ) : null}
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSelectedAuditRow(latestImportant.row)
+                    setLatestActivityDetailsOpen(false)
+                  }}
+                >
+                  Inspect log entry
+                </Button>
                 <Button onClick={() => setLatestActivityDetailsOpen(false)}>Close</Button>
               </div>
             </div>
@@ -1414,44 +1253,120 @@ export default function AuditLog() {
                       </div>
                       <div>
                         <h3 className="text-sm font-medium text-muted-foreground mb-2">{t('audit.detailsModal.whatChanged')}</h3>
+                        {s.changeSummary === 'auth' && s.authFields && s.authFields.length > 0 && (
+                          <div className="overflow-x-auto table-wrap table-wrapper rounded-lg border border-border mb-3">
+                            <table className="w-full border-collapse text-sm min-w-[320px]">
+                              <thead>
+                                <tr className="border-b border-border bg-muted/30">
+                                  <th className="text-left p-2 font-medium">Field</th>
+                                  <th className="text-left p-2 font-medium">Value</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {s.authFields.map((f) => (
+                                  <tr key={f.field} className="border-b border-border/60 last:border-0">
+                                    <td className="p-2 font-medium text-foreground">{f.fieldLabel}</td>
+                                    <td className="p-2 text-foreground break-all">{f.value}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
                         {s.changeSummary === 'changes' && s.changes && s.changes.length > 0 && (
-                          <ul className="space-y-2 text-sm">
-                            {s.changes.map((c, i) => (
-                              <li key={i} className="flex flex-wrap gap-x-2 items-baseline border-b border-border/50 pb-2 last:border-0">
-                                <span className="font-medium text-foreground shrink-0">{c.fieldLabel}:</span>
-                                <span className="text-muted-foreground">{t('audit.detailsModal.previousValue')} </span>
-                                <span className="line-through text-muted-foreground">{c.oldVal}</span>
-                                <span className="text-muted-foreground">→</span>
-                                <span className="text-foreground">{c.newVal}</span>
-                              </li>
-                            ))}
-                          </ul>
+                          <div className="overflow-x-auto table-wrap table-wrapper rounded-lg border border-border">
+                            <table className="w-full border-collapse text-sm min-w-[400px]">
+                              <thead>
+                                <tr className="border-b border-border bg-muted/30">
+                                  <th className="text-left p-2 font-medium">Field</th>
+                                  <th className="text-left p-2 font-medium">{t('audit.detailsModal.previousValue')}</th>
+                                  <th className="text-left p-2 font-medium">{t('audit.detailsModal.newValue')}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {s.changes.map((c) => (
+                                  <tr key={c.field} className="border-b border-border/60 last:border-0">
+                                    <td className="p-2 font-medium text-foreground">{c.fieldLabel}</td>
+                                    <td className="p-2 text-muted-foreground line-through break-all">{c.oldVal}</td>
+                                    <td className="p-2 text-foreground break-all">{c.newVal}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         )}
                         {s.changeSummary === 'created' && s.createdFields && s.createdFields.length > 0 && (
-                          <ul className="space-y-2 text-sm">
-                            {s.createdFields.map((f, i) => (
-                              <li key={i} className="flex flex-wrap gap-x-2 border-b border-border/50 pb-2 last:border-0">
-                                <span className="font-medium text-foreground shrink-0">{f.fieldLabel}:</span>
-                                <span className="text-foreground break-all">{f.value}</span>
-                              </li>
-                            ))}
-                          </ul>
+                          <div className="overflow-x-auto table-wrap table-wrapper rounded-lg border border-border">
+                            <table className="w-full border-collapse text-sm min-w-[320px]">
+                              <thead>
+                                <tr className="border-b border-border bg-muted/30">
+                                  <th className="text-left p-2 font-medium">Field</th>
+                                  <th className="text-left p-2 font-medium">Value</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {s.createdFields.map((f) => (
+                                  <tr key={f.field} className="border-b border-border/60 last:border-0">
+                                    <td className="p-2 font-medium text-foreground">{f.fieldLabel}</td>
+                                    <td className="p-2 text-foreground break-all">{f.value}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         )}
-                        {s.changeSummary === 'deleted' && s.deletedText && (
-                          <p className="text-sm text-foreground">{s.deletedText}</p>
+                        {s.changeSummary === 'deleted' && (
+                          <>
+                            {s.deletedText ? <p className="text-sm text-foreground mb-3">{s.deletedText}</p> : null}
+                            {s.createdFields && s.createdFields.length > 0 ? (
+                              <div className="overflow-x-auto table-wrap table-wrapper rounded-lg border border-border">
+                                <table className="w-full border-collapse text-sm min-w-[320px]">
+                                  <thead>
+                                    <tr className="border-b border-border bg-muted/30">
+                                      <th className="text-left p-2 font-medium">Field</th>
+                                      <th className="text-left p-2 font-medium">Last known value</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {s.createdFields.map((f) => (
+                                      <tr key={f.field} className="border-b border-border/60 last:border-0">
+                                        <td className="p-2 font-medium text-foreground">{f.fieldLabel}</td>
+                                        <td className="p-2 text-foreground break-all">{f.value}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            ) : null}
+                          </>
                         )}
                         {s.changeSummary === 'notification' && s.notificationFields && s.notificationFields.length > 0 && (
-                          <ul className="space-y-2 text-sm">
-                            {s.notificationFields.map((f, i) => (
-                              <li key={i} className="flex flex-wrap gap-x-2 border-b border-border/50 pb-2 last:border-0">
-                                <span className="font-medium text-foreground shrink-0">{f.fieldLabel}:</span>
-                                <span className="text-foreground break-all">{f.value}</span>
-                              </li>
-                            ))}
-                          </ul>
+                          <div className="overflow-x-auto table-wrap table-wrapper rounded-lg border border-border">
+                            <table className="w-full border-collapse text-sm min-w-[320px]">
+                              <thead>
+                                <tr className="border-b border-border bg-muted/30">
+                                  <th className="text-left p-2 font-medium">Field</th>
+                                  <th className="text-left p-2 font-medium">Value</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {s.notificationFields.map((f) => (
+                                  <tr key={f.field} className="border-b border-border/60 last:border-0">
+                                    <td className="p-2 font-medium text-foreground">{f.fieldLabel}</td>
+                                    <td className="p-2 text-foreground break-all">{f.value}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         )}
-                        {(s.changeSummary === 'changes' && (!s.changes || s.changes.length === 0)) && (
-                          <p className="text-sm text-muted-foreground">{t('audit.summary.updatedEntity').replace('{entity}', (selectedAuditRow.entity_type || 'record').replace(/_/g, ' '))}</p>
+                        {s.changeSummary === 'changes' && (!s.changes || s.changes.length === 0) && (
+                          <p className="text-sm text-muted-foreground">
+                            {t('audit.summary.updatedEntity').replace(
+                              '{entity}',
+                              formatEntityType(selectedAuditRow.entity_type || 'record', t).toLowerCase(),
+                            )}
+                          </p>
                         )}
                       </div>
                     </>

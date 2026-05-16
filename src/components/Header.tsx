@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Menu, Sun, Moon, User, Languages, Settings, LogOut, CircleUserRound } from 'lucide-react'
+import { Menu, Sun, Moon, User, Languages, LogOut, CircleUserRound } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { HeaderIconButton } from './HeaderIconButton'
 import NotificationBell from './NotificationBell'
@@ -143,19 +143,6 @@ export default function Header({ onMenuClick }: HeaderProps) {
                   <User className="h-4 w-4" />
                   <span>Profile</span>
                 </button>
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => {
-                    setProfileOpen(false)
-                    navigate('/settings')
-                  }}
-                  role="menuitem"
-                >
-                  <Settings className="h-4 w-4" />
-                  <span>Settings</span>
-                </button>
-
                 <div className="my-1 h-px bg-gray-200" />
 
                 <button

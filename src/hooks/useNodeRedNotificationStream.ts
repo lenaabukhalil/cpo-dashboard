@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react"
 import { useAuth } from "../context/AuthContext"
 import { useNotifications } from "../contexts/NotificationContext"
+import { useToast } from "../contexts/ToastContext"
 import { fetchChargerNotifications } from "../services/api"
 
 const MAX_SEEN_IDS = 500
@@ -14,28 +15,13 @@ function markSeen(id: string) {
   }
 }
 
-function showToast(title: string, message: string) {
-  // Lightweight fallback toast without introducing a new toast framework.
-  const node = document.createElement("div")
-  node.className =
-    "fixed right-4 top-4 z-[120] max-w-sm rounded-md border border-border bg-card px-4 py-3 text-sm shadow-lg"
-  node.innerHTML = `<div class="font-semibold">${title}</div><div class="text-muted-foreground mt-1">${message}</div>`
-  document.body.appendChild(node)
-  window.setTimeout(() => {
-    node.style.opacity = "0"
-    node.style.transform = "translateY(-6px)"
-    node.style.transition = "all 200ms ease"
-  }, 2600)
-  window.setTimeout(() => {
-    node.remove()
-  }, 2900)
-}
-
 export function useNodeRedNotificationStream() {
   const { user, loading } = useAuth()
   const { mergeNotificationsFromApi } = useNotifications()
+  const { pushToast } = useToast()
   const pollTimerRef = useRef<number | null>(null)
   const lastPollTsRef = useRef<number>(0)
+  const isInitialLoadRef = useRef(true)
 
   useEffect(() => {
     if (loading || !user) return
@@ -53,6 +39,7 @@ export function useNodeRedNotificationStream() {
     }
 
     const poll = async () => {
+      const suppressToasts = isInitialLoadRef.current
       try {
         const since = lastPollTsRef.current > 0 ? lastPollTsRef.current : Date.now() - MS_PER_DAY
         const { items, unreadCount } = await fetchChargerNotifications({ since, userId })
@@ -66,16 +53,22 @@ export function useNodeRedNotificationStream() {
           const ts = toEpochMs(item)
           if (ts != null) lastPollTsRef.current = Math.max(lastPollTsRef.current, ts)
 
+          if (suppressToasts) return
+
           const title =
             (item.chargerName ?? "").trim() ||
             ((item.chargerId ?? "").trim() ? `Charger ${String(item.chargerId).trim()}` : "Charger")
           const message =
             (item.message ?? "").trim() ||
             (item.online === true ? "Charger is online" : "Charger is offline")
-          showToast(title, message)
+          pushToast(title, message)
         })
       } catch {
         // ignore poll errors
+      } finally {
+        if (suppressToasts) {
+          isInitialLoadRef.current = false
+        }
       }
 
       pollTimerRef.current = window.setTimeout(poll, POLL_INTERVAL_MS)
@@ -87,7 +80,8 @@ export function useNodeRedNotificationStream() {
       if (pollTimerRef.current) window.clearTimeout(pollTimerRef.current)
       pollTimerRef.current = null
       lastPollTsRef.current = 0
+      isInitialLoadRef.current = true
       seenNotificationIds = new Set()
     }
-  }, [loading, user, mergeNotificationsFromApi])
+  }, [loading, user, mergeNotificationsFromApi, pushToast])
 }

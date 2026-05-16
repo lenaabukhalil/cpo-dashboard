@@ -1,6 +1,6 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
-import { canAccessPath } from './lib/permissions'
+import { ACCOUNTANT_HOME_PATH, canAccessPath, getRole } from './lib/permissions'
 import Layout from './components/Layout'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -11,22 +11,19 @@ import Reports from './pages/Reports'
 import PredictiveAI from './pages/PredictiveAI'
 import Support from './pages/Support'
 import Billing from './pages/Billing'
-import Settings from './pages/Settings'
 import MapView from './pages/MapView'
 import PartnerUsers from './pages/PartnerUsers'
+import Grants from './pages/Grants'
 import SupportLayout from './pages/support/SupportLayout'
 import ListOfLocationChargerConnectorTariffs from './pages/ListOfLocationChargerConnectorTariffs'
 import AuditLog from './pages/AuditLog'
 import Profile from './pages/Profile'
 import NotificationDetail from './pages/NotificationDetail'
 import { NotificationProvider } from './contexts/NotificationContext'
+import { ToastProvider } from './contexts/ToastContext'
 
 function isOperator(roleName: string | undefined): boolean {
   return (roleName || '').toLowerCase() === 'operator'
-}
-
-function isAccountant(roleName: string | undefined): boolean {
-  return (roleName || '').toLowerCase() === 'accountant'
 }
 
 function isEngineer(roleName: string | undefined): boolean {
@@ -47,7 +44,8 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   if (loading || !user) return null
   const path = location.pathname.replace(/\/$/, '') || '/'
   if (!canAccessPath(user.role_name, path, permissions)) {
-    if (isAccountant(user.role_name) || isViewer(user.role_name)) return <Navigate to="/" replace />
+    if (getRole(user.role_name) === 'accountant') return <Navigate to={ACCOUNTANT_HOME_PATH} replace />
+    if (isViewer(user.role_name)) return <Navigate to="/" replace />
     if (isEngineer(user.role_name)) return <Navigate to="/" replace />
     if (isManager(user.role_name)) return <Navigate to="/" replace />
     if (isOperator(user.role_name)) return <Navigate to="/" replace />
@@ -71,6 +69,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function IndexRedirect() {
+  const { user } = useAuth()
+  if (getRole(user?.role_name) === 'accountant') {
+    return <Navigate to={ACCOUNTANT_HOME_PATH} replace />
+  }
   return <Dashboard />
 }
 
@@ -99,9 +101,9 @@ function AppRoutes() {
         <Route path="billing" element={<RoleGuard><Billing /></RoleGuard>} />
         <Route path="map" element={<RoleGuard><MapView /></RoleGuard>} />
         <Route path="partner-users" element={<RoleGuard><PartnerUsers /></RoleGuard>} />
+        <Route path="grants" element={<RoleGuard><Grants /></RoleGuard>} />
         <Route path="audit-log" element={<RoleGuard><AuditLog /></RoleGuard>} />
         <Route path="access-log" element={<Navigate to="/audit-log" replace />} />
-        <Route path="settings" element={<RoleGuard><Settings /></RoleGuard>} />
         <Route path="profile" element={<Profile />} />
         <Route
           path="notifications/:notificationId"
@@ -117,7 +119,9 @@ export default function App() {
   return (
     <AuthProvider>
       <NotificationProvider>
-        <AppRoutes />
+        <ToastProvider>
+          <AppRoutes />
+        </ToastProvider>
       </NotificationProvider>
     </AuthProvider>
   )

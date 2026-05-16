@@ -3,7 +3,9 @@ const BASE = import.meta.env.VITE_API_URL || ''
 /** Client-side fetch timeout (maps to 504-shaped response for callers e.g. login). */
 const REQUEST_TIMEOUT_MS = 15_000
 
-export type PermissionMap = Record<string, 'R' | 'RW'>
+/** JWT / API permission values: boolean (current API) or legacy R/RW strings. */
+export type PermissionValue = boolean | 'R' | 'RW'
+export type PermissionMap = Record<string, PermissionValue>
 
 /** GET cache: same URL within TTL returns cached response so data appears faster on revisit */
 const GET_CACHE_TTL_MS = 20_000 // 20 seconds
@@ -204,15 +206,47 @@ export async function getPartnerUsers(
   return request<{ data: PartnerUser[] }>('/api/v4/users/partner', { params: p, skipCache })
 }
 
+export interface RbacRole {
+  id: number
+  name: string
+  code: string
+  description?: string
+}
+
+let rolesCache: RbacRole[] | null = null
+let rolesFetchPromise: Promise<RbacRole[]> | null = null
+
+/** GET /api/v4/roles — cached in memory after first successful load. */
+export async function getRoles(): Promise<RbacRole[]> {
+  if (rolesCache) return rolesCache
+  if (rolesFetchPromise) return rolesFetchPromise
+  rolesFetchPromise = request<{ data: RbacRole[] }>('/api/v4/roles', { skipCache: true })
+    .then((res) => {
+      const data = (res as { data?: RbacRole[] }).data
+      const list = Array.isArray(data) ? data : []
+      if (res.success && list.length > 0) rolesCache = list
+      return list
+    })
+    .catch(() => [] as RbacRole[])
+    .finally(() => {
+      rolesFetchPromise = null
+    })
+  return rolesFetchPromise
+}
+
+export function clearRolesCache() {
+  rolesCache = null
+}
+
 export async function createPartnerUser(body: {
-  organization_id: number
-  f_name: string
-  l_name: string
+  first_name: string
+  last_name: string
+  country_code: number
   mobile: string
-  role_id: number
+  email: string
   password: string
-  email?: string
-  user_type?: string
+  role_id: number
+  user_type: string
 }) {
   return request<{ success: boolean; message?: string; insertId?: number }>('/api/v4/users/partner', {
     method: 'POST',
@@ -238,6 +272,60 @@ export async function deletePartnerUser(userId: number) {
   })
 }
 
+// Organization resource grants
+export interface Grant {
+  id: number
+  grantee_organization_id: number
+  grantee_org_name?: string
+  scope_type: 'organization' | 'location' | 'charger'
+  target_organization_id?: number | null
+  target_org_name?: string | null
+  target_location_id?: number | null
+  target_location_name?: string | null
+  target_charger_id?: number | null
+  target_charger_name?: string | null
+  relationship_type: string
+  can_view: number
+  can_manage: number
+  can_operate: number
+  can_view_bills: number
+  status: 'active' | 'disabled'
+  starts_at?: string | null
+  ends_at?: string | null
+  created_at?: string
+}
+
+export async function getGrants() {
+  return request<{ count: number; data: Grant[] }>('/api/v4/grants', { skipCache: true })
+}
+
+export async function createGrant(body: {
+  grantee_organization_id: number
+  scope_type: 'organization' | 'location' | 'charger'
+  target_organization_id?: number | null
+  target_location_id?: number | null
+  target_charger_id?: number | null
+  relationship_type?: string
+  can_view?: boolean
+  can_manage?: boolean
+  can_operate?: boolean
+  can_view_bills?: boolean
+  starts_at?: string | null
+  ends_at?: string | null
+}) {
+  return request<{ success: boolean; insertId?: number }>('/api/v4/grants', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function revokeGrant(id: number) {
+  return request<{ success: boolean }>('/api/v4/grants', {
+    method: 'DELETE',
+    params: { id: String(id) },
+  })
+}
+
 export interface Org {
   organization_id: number
   name: string
@@ -246,10 +334,10 @@ export interface Org {
   contact_last_name?: string
   contact_phoneNumber?: string
   details?: string
-  logo?: string | null
+  logo_url?: string | null
 }
 
-export async function updateOrg(id: number, body: Partial<Pick<Org, 'name' | 'name_ar' | 'contact_first_name' | 'contact_last_name' | 'contact_phoneNumber' | 'details' | 'logo'>>) {
+export async function updateOrg(id: number, body: Partial<Pick<Org, 'name' | 'name_ar' | 'contact_first_name' | 'contact_last_name' | 'contact_phoneNumber' | 'details' | 'logo_url'>>) {
   return request<{ success: boolean; message?: string }>('/api/v4/org', {
     method: 'PUT',
     params: { id: String(id) },
@@ -517,7 +605,6 @@ export interface MaintenanceTicket {
   location_id?: number
   charger_id?: number
   connector_id?: number
-  auto_detected?: number
   created_at?: string
   updated_at?: string
 }
@@ -540,7 +627,6 @@ export async function createMaintenanceTicket(body: {
   location_id?: number
   charger_id?: number
   connector_id?: number
-  auto_detect?: boolean
 }) {
   return request<{ data: MaintenanceTicket }>('/api/v4/support/maintenance-ticket', {
     method: 'POST',
@@ -1031,13 +1117,13 @@ export async function markAllNotificationsRead(userId: number) {
   return markNotificationsSeenApi(userId)
 }
 
-// Audit Log (administrative changes only: create, update, delete)
+// Audit Log (entity changes + authentication events where entity_type = auth)
 export interface AuditLogEntry {
   id: number
   timestamp: string
   user_id: number | null
   organization_id: number | null
-  action: 'create' | 'update' | 'delete' | 'notification'
+  action: string
   entity_type: string
   entity_id: string | null
   old_value: Record<string, unknown> | null
@@ -1051,7 +1137,7 @@ export interface AuditLogEntry {
 export interface AuditLogFilters {
   from?: string
   to?: string
-  action?: 'create' | 'update' | 'delete' | 'notification'
+  action?: string
   entity_type?: string
   user_id?: number
   organization_id?: number
@@ -1095,85 +1181,6 @@ export async function exportAuditLogs(
   const token = getToken()
   const qs = new URLSearchParams(params).toString()
   const url = `${BASE}/api/v4/audit-log/export?${qs}`
-  const res = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
-  if (!res.ok) throw new Error(res.statusText)
-  const blob = await res.blob()
-  let filename: string | undefined
-  const disp = res.headers.get('Content-Disposition')
-  if (disp) {
-    const m = disp.match(/filename="?([^";\n]+)"?/i)
-    if (m) filename = m[1].trim()
-  }
-  return { blob, filename }
-}
-
-// Access Log (authentication events: login, logout, failed_login, password_reset, etc.)
-export type AccessLogAction =
-  | 'login'
-  | 'logout'
-  | 'failed_login'
-  | 'password_reset'
-  | 'token_refresh'
-  | 'session_expired'
-  | 'mfa_login'
-  | 'mfa_failed'
-
-export interface AccessLogEntry {
-  id: number
-  timestamp: string
-  user_id: number | null
-  organization_id: number | null
-  action: string
-  entity_type: string
-  entity_id: string | null
-  old_value: Record<string, unknown> | null
-  new_value: Record<string, unknown> | null
-  ip: string | null
-  source: string | null
-  correlation_id: string | null
-  user_name?: string | null
-}
-
-export interface AccessLogFilters {
-  from?: string
-  to?: string
-  action?: string
-  user_id?: number
-  organization_id?: number
-  limit?: number
-  offset?: number
-}
-
-export async function getAccessLogs(filters: AccessLogFilters) {
-  const params: Record<string, string> = {}
-  if (filters.from) params.from = filters.from
-  if (filters.to) params.to = filters.to
-  if (filters.action) params.action = filters.action
-  if (filters.user_id != null) params.user_id = String(filters.user_id)
-  if (filters.organization_id != null) params.organization_id = String(filters.organization_id)
-  if (filters.limit != null) params.limit = String(filters.limit)
-  if (filters.offset != null) params.offset = String(filters.offset)
-  return request<{ success: boolean; data: AccessLogEntry[]; total: number }>('/api/v4/access-log', {
-    params,
-    skipCache: true,
-  })
-}
-
-export async function exportAccessLogs(
-  format: 'csv' | 'pdf',
-  filters: Omit<AccessLogFilters, 'limit' | 'offset'>
-): Promise<AuditLogExportResult> {
-  const params: Record<string, string> = { format }
-  if (filters.from) params.from = filters.from
-  if (filters.to) params.to = filters.to
-  if (filters.action) params.action = filters.action
-  if (filters.user_id != null) params.user_id = String(filters.user_id)
-  if (filters.organization_id != null) params.organization_id = String(filters.organization_id)
-  const token = getToken()
-  const qs = new URLSearchParams(params).toString()
-  const url = `${BASE}/api/v4/access-log/export?${qs}`
   const res = await fetch(url, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })

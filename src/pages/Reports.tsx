@@ -32,8 +32,9 @@ import {
   toDateOnlyForComparisonApi,
   validateSessionsDatetimeRange,
 } from '../lib/sessionsReportRange'
+import FinancialReport from './reports/FinancialReport'
 
-type TabId = 'sessions' | 'chargers' | 'connectors'
+type TabId = 'sessions' | 'chargers' | 'connectors' | 'financial'
 
 function decodeHexToAsciiIfPrintable(hex: string): string | null {
   const s = hex.trim()
@@ -67,6 +68,7 @@ function useReportsTabs(): { id: TabId; labelKey: string }[] {
     { id: 'sessions', labelKey: 'reports.tab.sessions' },
     { id: 'chargers', labelKey: 'reports.tab.chargers' },
     { id: 'connectors', labelKey: 'reports.tab.connectors' },
+    { id: 'financial', labelKey: 'reports.tab.financial' },
   ]
 }
 
@@ -1020,6 +1022,8 @@ export default function Reports() {
           </CardContent>
         </Card>
       )}
+
+      {tab === 'financial' && <FinancialReport />}
 
     </div>
   )

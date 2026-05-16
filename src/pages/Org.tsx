@@ -95,12 +95,12 @@ export default function Org() {
         <CardContent>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Logo block – left column */}
-            {org.logo && (
+            {org.logo_url && (
               <div className="lg:col-span-4 space-y-3">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t('org.logo')}</p>
                 <div className="flex flex-col sm:flex-row lg:flex-col items-start gap-4">
                   <img
-                    src={org.logo}
+                    src={org.logo_url}
                     alt={org.name}
                     className="h-24 w-24 shrink-0 rounded-lg border border-border object-contain bg-muted/30"
                     onError={(e) => {
@@ -110,8 +110,8 @@ export default function Org() {
                   <div className="min-w-0 flex-1 w-full">
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">{t('org.logoUrl')}</p>
                     <div className="rounded-md border border-border bg-muted/20 px-3 py-2 font-mono text-xs text-foreground overflow-hidden">
-                      <p className="truncate" dir="ltr" title={org.logo}>
-                        {org.logo}
+                      <p className="truncate" dir="ltr" title={org.logo_url}>
+                        {org.logo_url}
                       </p>
                     </div>
                   </div>
@@ -119,7 +119,7 @@ export default function Org() {
               </div>
             )}
             {/* Org details – right column */}
-            <div className={org.logo ? 'lg:col-span-8' : 'lg:col-span-12'}>
+            <div className={org.logo_url ? 'lg:col-span-8' : 'lg:col-span-12'}>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5">
                 <div>
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">{t('org.organizationId')}</p>

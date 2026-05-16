@@ -9,6 +9,7 @@ import { updateOrg } from '../services/api'
 import { isValidLogoUrl } from './ChangeLogoModal'
 import { usePermission } from '../hooks/usePermission'
 import { useTranslation } from '../context/LanguageContext'
+import { useAuth } from '../context/AuthContext'
 
 type PreviewState = 'empty' | 'invalid-url' | 'loading' | 'loaded' | 'load-error'
 
@@ -28,7 +29,11 @@ export default function OrganizationLogoDialog({
   onSaved,
 }: OrganizationLogoDialogProps) {
   const { t } = useTranslation()
-  const canSaveLogo = usePermission('organizations.view', 'RW')
+  const { user } = useAuth()
+  const organizationsViewRw = usePermission('organizations.view', 'RW')
+  const roleLower = user?.role_name?.toLowerCase() ?? ''
+  const isAdmin = roleLower.includes('admin') || roleLower.includes('owner')
+  const canSaveLogo = isAdmin || organizationsViewRw
   const [urlInput, setUrlInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [previewState, setPreviewState] = useState<PreviewState>('empty')
@@ -83,7 +88,7 @@ export default function OrganizationLogoDialog({
     setSaving(true)
     try {
       const valueToSave = trimmed || undefined
-      const r = await updateOrg(organizationId, { logo: valueToSave })
+      const r = await updateOrg(organizationId, { logo_url: valueToSave })
       if (!r.success) {
         setErrorMessage(r.message || 'Failed to save')
         return

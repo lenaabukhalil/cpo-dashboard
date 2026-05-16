@@ -24,7 +24,6 @@ import {
   ExternalLink,
   Wrench,
   MapPin,
-  Settings,
 } from 'lucide-react'
 
 export default function Dashboard() {
@@ -152,7 +151,6 @@ export default function Dashboard() {
           <ActionCard to="/sessions" icon={<Activity />} title={t('nav.monitor')} />
           <ActionCard to="/details" icon={<MapPin />} title={t('nav.details')} />
           <ActionCard to="/support" icon={<Wrench />} title={t('dashboard.support')} />
-          <ActionCard to="/settings" icon={<Settings />} title={t('nav.settings')} />
         </div>
       </section>
 

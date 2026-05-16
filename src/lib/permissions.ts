@@ -11,15 +11,16 @@ import {
   Activity,
   FileText,
   Wrench,
-  Settings,
   Users,
+  Share2,
   Map,
   Table,
   ScrollText,
 } from 'lucide-react'
 
 export type Access = 'R' | 'RW'
-export type PermissionMap = Record<string, Access>
+export type { PermissionMap, PermissionValue } from '../services/api'
+import type { PermissionMap } from '../services/api'
 
 /** Map UI route → required permission code + minimum access. Codes must match `ocpp_CSGO.Permissions.code` exactly. */
 export const ROUTE_PERMISSIONS: Record<string, { code: string; access: Access }> = {
@@ -29,8 +30,6 @@ export const ROUTE_PERMISSIONS: Record<string, { code: string; access: Access }>
   '/sessions': { code: 'sessions.view', access: 'R' },
   '/reports': { code: 'reports.view', access: 'R' },
   '/support': { code: 'support.view', access: 'R' },
-  // TODO(rbac): confirm vs `ocpp_CSGO.Permissions` — route uses R so read-only users can open the page; writes require RW via usePermission.
-  '/settings': { code: 'settings.view', access: 'R' },
   '/map': { code: 'map.view', access: 'R' },
   // TODO(rbac): confirm — list GET may be R-only; mutations still enforced server-side as RW.
   '/partner-users': { code: 'users.manage', access: 'R' },
@@ -40,12 +39,24 @@ export const ROUTE_PERMISSIONS: Record<string, { code: string; access: Access }>
 // TODO(rbac): No RBAC matrix settings page in this repo. When added, use:
 // GET /api/v4/rbac/permissions | GET /api/v4/rbac/roles | GET/PUT /api/v4/rbac/roles/permissions?roleId
 
+/** Read access: boolean true, legacy R, or legacy RW. */
+export function canRead(perms: PermissionMap | undefined | null, code: string): boolean {
+  if (!perms || typeof perms !== 'object') return false
+  if (perms['global.access'] === true) return true
+  const v = perms[code]
+  return v === true || v === 'R' || v === 'RW'
+}
+
+/** Write / manage access: boolean true or legacy RW. */
+export function hasWritePermission(perms: PermissionMap | undefined | null, code: string): boolean {
+  if (!perms || typeof perms !== 'object') return false
+  if (perms['global.access'] === true) return true
+  const v = perms[code]
+  return v === true || v === 'RW'
+}
+
 export function hasPermission(perms: PermissionMap | undefined, code: string, need: Access = 'R'): boolean {
-  if (!perms) return false
-  const got = perms[code]
-  if (!got) return false
-  if (need === 'RW') return got === 'RW'
-  return true
+  return need === 'RW' ? hasWritePermission(perms, code) : canRead(perms, code)
 }
 
 export type Role = 'admin' | 'operator' | 'accountant' | 'engineer' | 'manager' | 'viewer'
@@ -64,10 +75,10 @@ export interface NavItem {
 }
 
 function normalizeRole(roleName: string | undefined): Role | null {
-  const r = (roleName || '').toLowerCase()
-  if (r === 'admin' || r === 'owner' || r === 'super_admin') return 'admin'
+  const r = (roleName || '').toLowerCase().trim().replace(/\s+/g, ' ')
+  if (r === 'admin' || r === 'owner' || r === 'super_admin' || r === 'super admin' || r === 'platform_admin' || r === 'platform admin' || r === 'org_admin' || r === 'organization admin') return 'admin'
   if (r === 'operator') return 'operator'
-  if (r === 'accountant') return 'accountant'
+  if (r === 'accountant' || r === 'org_accountant' || r === 'organization accountant') return 'accountant'
   if (r === 'engineer') return 'engineer'
   if (r === 'manager') return 'manager'
   if (r === 'viewer') return 'viewer'
@@ -80,21 +91,24 @@ export function getRole(roleName: string | undefined): Role | null {
 
 const ADMIN_PATHS = [
   '/', '/org', '/details', '/list',
-  '/sessions', '/reports', '/support', '/settings',
-  '/map', '/partner-users', '/audit-log',
+  '/sessions', '/reports', '/support',
+  '/map', '/partner-users', '/grants', '/audit-log',
 ]
 /** Operator: A. Monitor, B. Organizations, C. Operation, D. Support (Maintenance), Settings. No D. Reports. */
 const OPERATOR_PATHS = [
-  '/', '/map', '/org', '/details', '/list', '/sessions', '/support', '/settings',
+  '/', '/map', '/org', '/details', '/list', '/sessions', '/support',
 ]
 /** Engineer: Dashboard, Map, Organization, Details, List, Monitor, Maintenance. No Reports, Users, Audit Log, Settings. */
 const ENGINEER_PATHS = ['/', '/map', '/org', '/details', '/list', '/sessions', '/support']
 /** Manager: same as Engineer – Dashboard, Map, Org, Details, List, Monitor, Support. */
 const MANAGER_PATHS = ['/', '/map', '/org', '/details', '/list', '/sessions', '/support']
-/** Accountant: Dashboard, Organization, List, D. Reports (Reports & Analytics). No Predictive AI, Map, Users, Monitor, Maintenance, Settings. */
-const ACCOUNTANT_PATHS = ['/', '/org', '/list', '/reports']
-/** Viewer: read-focused default until backend maps dedicated codes (same footprint as accountant). */
-const VIEWER_PATHS = ACCOUNTANT_PATHS
+/** Organization Accountant: Organization, List, Reports only (no Dashboard / A. Monitor). */
+const ACCOUNTANT_PATHS = ['/org', '/list', '/reports']
+/** Viewer: read-focused default (includes Dashboard). */
+const VIEWER_PATHS = ['/', '/org', '/list', '/reports']
+
+/** Default landing route when Organization Accountant cannot use "/". */
+export const ACCOUNTANT_HOME_PATH = '/org'
 
 export function canAccessPath(
   roleName: string | undefined,
@@ -102,11 +116,10 @@ export function canAccessPath(
   permissions?: PermissionMap,
 ): boolean {
   const p = path.replace(/\/$/, '') || '/'
-  if (p === '/') return true
 
   const rule = ROUTE_PERMISSIONS[p]
   const hasPerms = Boolean(permissions && Object.keys(permissions).length > 0)
-  if (rule && hasPerms && permissions && permissions[rule.code] !== undefined) {
+  if (rule && hasPerms && permissions && rule.code in permissions) {
     // Backend has provisioned this code → enforce strictly.
     return hasPermission(permissions, rule.code, rule.access)
   }
@@ -128,67 +141,65 @@ export function canAccessPath(
 /** Nav items with optional group (section label). Order: A → B → C → D → E. */
 function adminNav(): NavItem[] {
   return [
-    { to: '/', label: 'Dashboard', labelKey: 'nav.dashboard', icon: Home, group: 'A. Monitor', groupKey: 'group.monitor' },
-    { to: '/map', label: 'Map View', labelKey: 'nav.mapView', icon: Map, group: 'A. Monitor', groupKey: 'group.monitor' },
-    { to: '/org', label: 'Organization', labelKey: 'nav.organization', icon: Building2, group: 'B. Organizations', groupKey: 'group.organizations' },
-    { to: '/details', label: 'Location, Charger, Connector, Tariffs', labelKey: 'nav.details', icon: List, group: 'B. Organizations', groupKey: 'group.organizations' },
-    { to: '/list', label: 'List of Location, Charger, Connector, Tariffs', labelKey: 'nav.list', icon: Table, group: 'B. Organizations', groupKey: 'group.organizations' },
-    { to: '/partner-users', label: 'Users of Organization', labelKey: 'nav.partnerUsers', icon: Users, group: 'B. Organizations', groupKey: 'group.organizations' },
-    { to: '/sessions', label: 'Monitor', labelKey: 'nav.monitor', icon: Activity, group: 'C. Operation', groupKey: 'group.operation' },
-    { to: '/reports', label: 'Reports & Analytics', labelKey: 'nav.reports', icon: FileText, group: 'D. Reports', groupKey: 'group.reports' },
-    { to: '/audit-log', label: 'Audit Log', labelKey: 'nav.auditLog', icon: ScrollText, group: 'D. Reports', groupKey: 'group.reports' },
-    { to: '/support', label: 'Maintenance Tickets', labelKey: 'nav.maintenanceTickets', icon: Wrench, group: 'E. Support', groupKey: 'group.support', end: true },
-    { to: '/settings', label: 'Settings', labelKey: 'nav.settings', icon: Settings },
+    { to: '/', label: 'Dashboard', labelKey: 'nav.dashboard', icon: Home, group: 'Monitor', groupKey: 'group.monitor' },
+    { to: '/map', label: 'Map View', labelKey: 'nav.mapView', icon: Map, group: 'Monitor', groupKey: 'group.monitor' },
+    { to: '/org', label: 'Organization', labelKey: 'nav.organization', icon: Building2, group: 'Organizations', groupKey: 'group.organizations' },
+    { to: '/details', label: 'Location, Charger, Connector, Tariffs', labelKey: 'nav.details', icon: List, group: 'Organizations', groupKey: 'group.organizations' },
+    { to: '/list', label: 'List of Location, Charger, Connector, Tariffs', labelKey: 'nav.list', icon: Table, group: 'Organizations', groupKey: 'group.organizations' },
+    { to: '/partner-users', label: 'Users of Organization', labelKey: 'nav.partnerUsers', icon: Users, group: 'Organizations', groupKey: 'group.organizations' },
+    { to: '/grants', label: 'Resource Grants', labelKey: 'nav.grants', icon: Share2, group: 'Organizations', groupKey: 'group.organizations' },
+    { to: '/sessions', label: 'Monitor', labelKey: 'nav.monitor', icon: Activity, group: 'Operation', groupKey: 'group.operation' },
+    { to: '/reports', label: 'Reports & Analytics', labelKey: 'nav.reports', icon: FileText, group: 'Reports', groupKey: 'group.reports' },
+    { to: '/audit-log', label: 'Audit Log', labelKey: 'nav.auditLog', icon: ScrollText, group: 'Reports', groupKey: 'group.reports' },
+    { to: '/support', label: 'Maintenance Tickets', labelKey: 'nav.maintenanceTickets', icon: Wrench, group: 'Support', groupKey: 'group.support', end: true },
   ]
 }
 
 /** Operator: A. Monitor (Dashboard, Map) | B. Organizations (Org, Details, List) | C. Operation (Monitor) | D. Support (Maintenance Tickets) | Settings. No D. Reports. */
 function operatorNav(): NavItem[] {
   return [
-    { to: '/', label: 'Dashboard', labelKey: 'nav.dashboard', icon: Home, group: 'A. Monitor', groupKey: 'group.monitor' },
-    { to: '/map', label: 'Map View', labelKey: 'nav.mapView', icon: Map, group: 'A. Monitor', groupKey: 'group.monitor' },
-    { to: '/org', label: 'Organization', labelKey: 'nav.organization', icon: Building2, group: 'B. Organizations', groupKey: 'group.organizations' },
-    { to: '/details', label: 'Location, Charger, Connector, Tariffs', labelKey: 'nav.details', icon: List, group: 'B. Organizations', groupKey: 'group.organizations' },
-    { to: '/list', label: 'List of Location, Charger, Connector, Tariffs', labelKey: 'nav.list', icon: Table, group: 'B. Organizations', groupKey: 'group.organizations' },
-    { to: '/sessions', label: 'Monitor', labelKey: 'nav.monitor', icon: Activity, group: 'C. Operation', groupKey: 'group.operation' },
-    { to: '/support', label: 'Maintenance Tickets', labelKey: 'nav.maintenanceTickets', icon: Wrench, group: 'D. Support', groupKey: 'group.support', end: true },
-    { to: '/settings', label: 'Settings', labelKey: 'nav.settings', icon: Settings },
+    { to: '/', label: 'Dashboard', labelKey: 'nav.dashboard', icon: Home, group: 'Monitor', groupKey: 'group.monitor' },
+    { to: '/map', label: 'Map View', labelKey: 'nav.mapView', icon: Map, group: 'Monitor', groupKey: 'group.monitor' },
+    { to: '/org', label: 'Organization', labelKey: 'nav.organization', icon: Building2, group: 'Organizations', groupKey: 'group.organizations' },
+    { to: '/details', label: 'Location, Charger, Connector, Tariffs', labelKey: 'nav.details', icon: List, group: 'Organizations', groupKey: 'group.organizations' },
+    { to: '/list', label: 'List of Location, Charger, Connector, Tariffs', labelKey: 'nav.list', icon: Table, group: 'Organizations', groupKey: 'group.organizations' },
+    { to: '/sessions', label: 'Monitor', labelKey: 'nav.monitor', icon: Activity, group: 'Operation', groupKey: 'group.operation' },
+    { to: '/support', label: 'Maintenance Tickets', labelKey: 'nav.maintenanceTickets', icon: Wrench, group: 'Support', groupKey: 'group.support', end: true },
   ]
 }
 
 /** Engineer: Dashboard, Map, Organization, Details, List, Monitor, Maintenance. No Reports, Users, Predictive AI, Audit Log, Settings. */
 function engineerNav(): NavItem[] {
   return [
-    { to: '/', label: 'Dashboard', labelKey: 'nav.dashboard', icon: Home, group: 'A. Monitor', groupKey: 'group.monitor' },
-    { to: '/map', label: 'Map View', labelKey: 'nav.mapView', icon: Map, group: 'A. Monitor', groupKey: 'group.monitor' },
-    { to: '/org', label: 'Organization', labelKey: 'nav.organization', icon: Building2, group: 'B. Organizations', groupKey: 'group.organizations' },
-    { to: '/details', label: 'Location, Charger, Connector, Tariffs', labelKey: 'nav.details', icon: List, group: 'B. Organizations', groupKey: 'group.organizations' },
-    { to: '/list', label: 'List of Location, Charger, Connector, Tariffs', labelKey: 'nav.list', icon: Table, group: 'B. Organizations', groupKey: 'group.organizations' },
-    { to: '/sessions', label: 'Monitor', labelKey: 'nav.monitor', icon: Activity, group: 'C. Operation', groupKey: 'group.operation' },
-    { to: '/support', label: 'Maintenance Tickets', labelKey: 'nav.maintenanceTickets', icon: Wrench, group: 'E. Support', groupKey: 'group.support', end: true },
+    { to: '/', label: 'Dashboard', labelKey: 'nav.dashboard', icon: Home, group: 'Monitor', groupKey: 'group.monitor' },
+    { to: '/map', label: 'Map View', labelKey: 'nav.mapView', icon: Map, group: 'Monitor', groupKey: 'group.monitor' },
+    { to: '/org', label: 'Organization', labelKey: 'nav.organization', icon: Building2, group: 'Organizations', groupKey: 'group.organizations' },
+    { to: '/details', label: 'Location, Charger, Connector, Tariffs', labelKey: 'nav.details', icon: List, group: 'Organizations', groupKey: 'group.organizations' },
+    { to: '/list', label: 'List of Location, Charger, Connector, Tariffs', labelKey: 'nav.list', icon: Table, group: 'Organizations', groupKey: 'group.organizations' },
+    { to: '/sessions', label: 'Monitor', labelKey: 'nav.monitor', icon: Activity, group: 'Operation', groupKey: 'group.operation' },
+    { to: '/support', label: 'Maintenance Tickets', labelKey: 'nav.maintenanceTickets', icon: Wrench, group: 'Support', groupKey: 'group.support', end: true },
   ]
 }
 
 /** Manager: same as Engineer – A. Monitor, B. Organizations, C. Operation, E. Support. No D. Reports, Users, Audit Log, Settings. */
 function managerNav(): NavItem[] {
   return [
-    { to: '/', label: 'Dashboard', labelKey: 'nav.dashboard', icon: Home, group: 'A. Monitor', groupKey: 'group.monitor' },
-    { to: '/map', label: 'Map View', labelKey: 'nav.mapView', icon: Map, group: 'A. Monitor', groupKey: 'group.monitor' },
-    { to: '/org', label: 'Organization', labelKey: 'nav.organization', icon: Building2, group: 'B. Organizations', groupKey: 'group.organizations' },
-    { to: '/details', label: 'Location, Charger, Connector, Tariffs', labelKey: 'nav.details', icon: List, group: 'B. Organizations', groupKey: 'group.organizations' },
-    { to: '/list', label: 'List of Location, Charger, Connector, Tariffs', labelKey: 'nav.list', icon: Table, group: 'B. Organizations', groupKey: 'group.organizations' },
-    { to: '/sessions', label: 'Monitor', labelKey: 'nav.monitor', icon: Activity, group: 'C. Operation', groupKey: 'group.operation' },
-    { to: '/support', label: 'Maintenance Tickets', labelKey: 'nav.maintenanceTickets', icon: Wrench, group: 'E. Support', groupKey: 'group.support', end: true },
+    { to: '/', label: 'Dashboard', labelKey: 'nav.dashboard', icon: Home, group: 'Monitor', groupKey: 'group.monitor' },
+    { to: '/map', label: 'Map View', labelKey: 'nav.mapView', icon: Map, group: 'Monitor', groupKey: 'group.monitor' },
+    { to: '/org', label: 'Organization', labelKey: 'nav.organization', icon: Building2, group: 'Organizations', groupKey: 'group.organizations' },
+    { to: '/details', label: 'Location, Charger, Connector, Tariffs', labelKey: 'nav.details', icon: List, group: 'Organizations', groupKey: 'group.organizations' },
+    { to: '/list', label: 'List of Location, Charger, Connector, Tariffs', labelKey: 'nav.list', icon: Table, group: 'Organizations', groupKey: 'group.organizations' },
+    { to: '/sessions', label: 'Monitor', labelKey: 'nav.monitor', icon: Activity, group: 'Operation', groupKey: 'group.operation' },
+    { to: '/support', label: 'Maintenance Tickets', labelKey: 'nav.maintenanceTickets', icon: Wrench, group: 'Support', groupKey: 'group.support', end: true },
   ]
 }
 
-/** Accountant: Dashboard (A), Organization + List (B), D. Reports (Reports & Analytics). */
+/** Organization Accountant: B. Organizations + D. Reports (no A. Monitor / Dashboard). */
 function accountantNav(): NavItem[] {
   return [
-    { to: '/', label: 'Dashboard', labelKey: 'nav.dashboard', icon: Home, group: 'A. Monitor', groupKey: 'group.monitor' },
-    { to: '/org', label: 'Organization', labelKey: 'nav.organization', icon: Building2, group: 'B. Organizations', groupKey: 'group.organizations' },
-    { to: '/list', label: 'List of Location, Charger, Connector, Tariffs', labelKey: 'nav.list', icon: Table, group: 'B. Organizations', groupKey: 'group.organizations' },
-    { to: '/reports', label: 'Reports & Analytics', labelKey: 'nav.reports', icon: FileText, group: 'D. Reports', groupKey: 'group.reports' },
+    { to: '/org', label: 'Organization', labelKey: 'nav.organization', icon: Building2, group: 'Organizations', groupKey: 'group.organizations' },
+    { to: '/list', label: 'List of Location, Charger, Connector, Tariffs', labelKey: 'nav.list', icon: Table, group: 'Organizations', groupKey: 'group.organizations' },
+    { to: '/reports', label: 'Reports & Analytics', labelKey: 'nav.reports', icon: FileText, group: 'Reports', groupKey: 'group.reports' },
   ]
 }
 

@@ -290,9 +290,9 @@ export default function OrgDetails() {
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-foreground">{t('details.chooseLocation')}</h3>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {locations.map((loc) => (
+                {locations.map((loc, index) => (
                   <button
-                    key={loc.location_id}
+                    key={`${index}-${loc.location_id}`}
                     type="button"
                     onClick={() => {
                       setWizardLocation(loc)
@@ -333,7 +333,7 @@ export default function OrgDetails() {
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {wizardLocation.chargers.map((ch, idx) => (
                   <button
-                    key={ch.id}
+                    key={`${idx}-${ch.id}`}
                     type="button"
                     onClick={() => {
                       setWizardCharger(ch)
@@ -373,9 +373,9 @@ export default function OrgDetails() {
                 <p className="text-sm text-muted-foreground mt-1">{t('details.chooseConnectorToViewTariffs')}</p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {wizardCharger.connectors.map((conn) => (
+                {wizardCharger.connectors.map((conn, index) => (
                   <button
-                    key={conn.id}
+                    key={`${index}-${conn.id}`}
                     type="button"
                     onClick={() => {
                       setWizardConnector(conn)
@@ -442,8 +442,8 @@ export default function OrgDetails() {
                         </tr>
                       </thead>
                       <tbody>
-                        {tariffs.map((t) => (
-                          <tr key={t.tariff_id} className="border-t border-border">
+                        {tariffs.map((t, index) => (
+                          <tr key={`${index}-${t.tariff_id}`} className="border-t border-border">
                             <td className="py-3 px-4 font-medium">{t.type ?? '—'}</td>
                             <td className="py-3 px-4">{t.buy_rate != null ? t.buy_rate : '—'} / {t.sell_rate != null ? t.sell_rate : '—'}</td>
                             <td className="py-3 px-4">{t.transaction_fees != null ? t.transaction_fees : '—'}</td>

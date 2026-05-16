@@ -281,7 +281,7 @@ export default function Sessions() {
                 ) : (
                   <div className="space-y-4">
                   {detailsTree
-                    .map((loc) => {
+                    .map((loc, index) => {
                       const q = searchChargerQuery.trim().toLowerCase()
                       const chargers = q
                         ? loc.chargers.filter(
@@ -292,7 +292,7 @@ export default function Sessions() {
                         : loc.chargers
                       if (chargers.length === 0) return null
                       return (
-                        <Card key={loc.location_id} className="border border-border overflow-hidden">
+                        <Card key={`${index}-${loc.location_id}`} className="border border-border overflow-hidden">
                           <CardHeader className="py-3">
                             <CardTitle className="text-base flex items-center gap-2">
                               <MapPin className="h-4 w-4 text-primary" />
@@ -300,8 +300,8 @@ export default function Sessions() {
                             </CardTitle>
                           </CardHeader>
                           <CardContent className="pt-0 space-y-4">
-                            {chargers.map((ch) => (
-                              <div key={ch.id} className="rounded-xl border border-border bg-muted/20 p-4 space-y-3">
+                            {chargers.map((ch, chIdx) => (
+                              <div key={`${chIdx}-${ch.id}`} className="rounded-xl border border-border bg-muted/20 p-4 space-y-3">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <Zap className="h-4 w-4 text-amber-500" />
                                   <span className="font-semibold text-foreground">{ch.name ?? '—'}</span>
@@ -313,11 +313,11 @@ export default function Sessions() {
                                   {ch.connectors.length === 0 ? (
                                     <p className="text-xs text-muted-foreground">No connectors</p>
                                   ) : (
-                                    ch.connectors.map((conn) => {
+                                    ch.connectors.map((conn, connIdx) => {
                                       const liveStatus = getConnectorStatusFromList(ch.id, conn.id) ?? conn.status
                                       const logo = connectorTypeLogo(conn.connector_type ?? conn.type)
                                       return (
-                                        <div key={conn.id} className="flex items-center gap-2 flex-wrap rounded-lg border border-border bg-background px-3 py-2 text-sm">
+                                        <div key={`${connIdx}-${conn.id}`} className="flex items-center gap-2 flex-wrap rounded-lg border border-border bg-background px-3 py-2 text-sm">
                                           {logo ? (
                                             <span className="h-6 w-6 shrink-0 inline-flex items-center justify-center overflow-hidden">
                                               <img

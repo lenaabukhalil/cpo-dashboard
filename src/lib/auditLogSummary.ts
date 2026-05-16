@@ -1,13 +1,35 @@
 /**
- * Human-readable summary for Audit Log / Access Log table "Details" column.
- * Replaces raw JSON with short text derived from action, entity_type, old_value, new_value.
- * Also provides structured "More details" content for the row-detail modal.
+ * Human-readable summary for Audit Log table "Details" column and detail modal.
  */
 
-import type { AccessLogEntry } from '../services/api'
 import type { AuditLogEntry } from '../services/api'
 
 type TFunction = (key: string) => string
+
+const AUTH_ACTIONS = new Set([
+  'login',
+  'logout',
+  'failed_login',
+  'password_reset',
+  'token_refresh',
+  'session_expired',
+  'mfa_login',
+  'mfa_failed',
+])
+
+export function isAuthAuditRow(row: Pick<AuditLogEntry, 'action' | 'entity_type'>): boolean {
+  return row.entity_type === 'auth' || AUTH_ACTIONS.has(row.action)
+}
+
+/** Convert snake_case entity_type to a translated label. */
+export function formatEntityType(entity_type: string, t: TFunction): string {
+  const key = `audit.entity.${entity_type}`
+  const translated = t(key)
+  if (translated !== key) return translated
+  return entity_type
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+}
 
 function parseValue(val: Record<string, unknown> | null | string | undefined): Record<string, unknown> | null {
   if (val == null) return null
@@ -25,7 +47,7 @@ function parseValue(val: Record<string, unknown> | null | string | undefined): R
 
 function getChangedFields(
   oldVal: Record<string, unknown> | null,
-  newVal: Record<string, unknown> | null
+  newVal: Record<string, unknown> | null,
 ): string[] {
   if (!newVal || typeof newVal !== 'object') return []
   const old = oldVal && typeof oldVal === 'object' ? oldVal : {}
@@ -33,7 +55,6 @@ function getChangedFields(
   return keys.filter((k) => JSON.stringify(old[k]) !== JSON.stringify(newVal[k]))
 }
 
-/** Known maintenance_ticket fields we can show in summary. */
 const MAINTENANCE_FIELD_LABELS: Record<string, string> = {
   status: 'status',
   priority: 'priority',
@@ -42,25 +63,15 @@ const MAINTENANCE_FIELD_LABELS: Record<string, string> = {
   assigned_to: 'assigned to',
 }
 
-/**
- * Access Log (auth events): summary from action only.
- */
-export function getAccessLogSummary(
-  row: Pick<AccessLogEntry, 'action'>,
-  t: TFunction
-): string {
-  const keyMap: Record<string, string> = {
-    login: 'audit.summary.loggedIn',
-    logout: 'audit.summary.loggedOut',
-    failed_login: 'audit.summary.failedLogin',
-    password_reset: 'audit.summary.passwordReset',
-    token_refresh: 'audit.summary.tokenRefresh',
-    session_expired: 'audit.summary.sessionExpired',
-    mfa_login: 'audit.summary.mfaLogin',
-    mfa_failed: 'audit.summary.mfaFailed',
-  }
-  const key = keyMap[row.action]
-  return key ? t(key) : row.action
+const AUTH_SUMMARY_KEYS: Record<string, string> = {
+  login: 'audit.summary.loggedIn',
+  logout: 'audit.summary.loggedOut',
+  failed_login: 'audit.summary.failedLogin',
+  password_reset: 'audit.summary.passwordReset',
+  token_refresh: 'audit.summary.tokenRefresh',
+  session_expired: 'audit.summary.sessionExpired',
+  mfa_login: 'audit.summary.mfaLogin',
+  mfa_failed: 'audit.summary.mfaFailed',
 }
 
 /**
@@ -68,10 +79,15 @@ export function getAccessLogSummary(
  */
 export function getAuditLogSummary(
   row: Pick<AuditLogEntry, 'action' | 'entity_type' | 'old_value' | 'new_value'>,
-  t: TFunction
+  t: TFunction,
 ): string {
   const act = row.action
   const entity = row.entity_type || ''
+
+  if (isAuthAuditRow(row)) {
+    const key = AUTH_SUMMARY_KEYS[act]
+    return key ? t(key) : act
+  }
 
   if (entity === 'maintenance_ticket') {
     if (act === 'create') return t('audit.summary.createdTicket')
@@ -80,24 +96,16 @@ export function getAuditLogSummary(
       const changed = getChangedFields(row.old_value, row.new_value)
       if (changed.length === 0) return t('audit.summary.updatedTicket')
       const known = changed.filter((k) => MAINTENANCE_FIELD_LABELS[k])
-      if (
-        known.length === 2 &&
-        known.includes('status') &&
-        known.includes('priority')
-      )
+      if (known.length === 2 && known.includes('status') && known.includes('priority')) {
         return t('audit.summary.updatedStatusAndPriority')
-      if (known.length === 1)
-        return t('audit.summary.updatedField').replace(
-          '{field}',
-          MAINTENANCE_FIELD_LABELS[known[0]] || known[0]
-        )
-      if (changed.length <= 3)
-        return changed
-          .map((k) => MAINTENANCE_FIELD_LABELS[k] || k)
-          .join(', ')
-          .replace(/^/, t('audit.summary.updatedFieldsPrefix') + ' ')
-      const msg = t('audit.summary.changedNFields')
-      return msg.replace('{count}', String(changed.length))
+      }
+      if (known.length === 1) {
+        return t('audit.summary.updatedField').replace('{field}', MAINTENANCE_FIELD_LABELS[known[0]] || known[0])
+      }
+      if (changed.length <= 3) {
+        return changed.map((k) => MAINTENANCE_FIELD_LABELS[k] || k).join(', ').replace(/^/, `${t('audit.summary.updatedFieldsPrefix')} `)
+      }
+      return t('audit.summary.changedNFields').replace('{count}', String(changed.length))
     }
   }
 
@@ -108,17 +116,16 @@ export function getAuditLogSummary(
 
   if (act === 'notification') return t('audit.summary.notification')
 
-  // Generic fallback
-  const entityLabel = entity.replace(/_/g, ' ') || 'record'
+  const entityLabel = formatEntityType(entity, t).toLowerCase() || 'record'
   if (act === 'create') return t('audit.summary.createdEntity').replace('{entity}', entityLabel)
   if (act === 'delete') return t('audit.summary.deletedEntity').replace('{entity}', entityLabel)
   if (act === 'update') {
     const changed = getChangedFields(row.old_value, row.new_value)
-    if (changed.length > 0 && changed.length <= 5)
-      return t('audit.summary.updatedFieldsPrefix') + ' ' + changed.join(', ')
+    if (changed.length > 0 && changed.length <= 5) {
+      return `${t('audit.summary.updatedFieldsPrefix')} ${changed.join(', ')}`
+    }
     if (changed.length > 5) {
-      const msg = t('audit.summary.changedNFields')
-      return msg.replace('{count}', String(changed.length))
+      return t('audit.summary.changedNFields').replace('{count}', String(changed.length))
     }
     return t('audit.summary.updatedEntity').replace('{entity}', entityLabel)
   }
@@ -126,7 +133,6 @@ export function getAuditLogSummary(
   return `${act} ${entityLabel}`
 }
 
-/** Human-readable field labels for "More details" modal (key = field name). */
 const DETAIL_FIELD_LABELS: Record<string, string> = {
   title: 'Title',
   description: 'Description',
@@ -146,7 +152,9 @@ const DETAIL_FIELD_LABELS: Record<string, string> = {
   mobile: 'Mobile',
   email: 'Email',
   role_id: 'Role ID',
-  logo: 'Logo',
+  role_name: 'Role',
+  user_name: 'User name',
+  logo_url: 'Logo',
   message: 'Message',
   level: 'Level',
   online: 'Online',
@@ -177,38 +185,61 @@ export interface AuditLogDetailSections {
   who: string
   action: string
   where: string
-  changeSummary: 'changes' | 'created' | 'deleted' | 'notification'
+  changeSummary: 'changes' | 'created' | 'deleted' | 'notification' | 'auth'
   changes?: AuditLogDetailChange[]
   createdFields?: AuditLogDetailKeyValue[]
   deletedText?: string
   notificationFields?: AuditLogDetailKeyValue[]
+  authFields?: AuditLogDetailKeyValue[]
 }
 
-/**
- * Build structured content for the "More details" modal from an audit log row.
- * Returns when, who, action, where, and a clear description of what changed (no raw JSON).
- */
+function actionLabel(row: AuditLogEntry, t: TFunction): string {
+  if (row.action === 'create') return t('audit.actionCreate')
+  if (row.action === 'update') return t('audit.actionUpdate')
+  if (row.action === 'delete') return t('audit.actionDelete')
+  if (row.action === 'notification') return t('audit.actionNotification')
+  if (row.action === 'login') return t('audit.actionLogin')
+  if (row.action === 'logout') return t('audit.actionLogout')
+  return row.action
+}
+
 export function getAuditLogDetailSections(
   row: AuditLogEntry,
   t: TFunction,
-  formatDateTimeFn: (value: unknown) => string
+  formatDateTimeFn: (value: unknown) => string,
 ): AuditLogDetailSections {
   const when = formatDateTimeFn(row.timestamp)
   const who = row.user_name ?? (row.user_id != null ? String(row.user_id) : '—')
-  const action =
-    row.action === 'create'
-      ? t('audit.actionCreate')
-      : row.action === 'update'
-        ? t('audit.actionUpdate')
-        : row.action === 'delete'
-          ? t('audit.actionDelete')
-          : row.action === 'notification'
-            ? t('audit.actionNotification')
-            : row.action
-  const where = [row.entity_type, row.entity_id].filter(Boolean).join(' · ') || '—'
+  const action = actionLabel(row, t)
+  const where =
+    [formatEntityType(row.entity_type || '', t), row.entity_id].filter(Boolean).join(' · ') || '—'
 
   const oldV = parseValue(row.old_value)
   const newV = parseValue(row.new_value)
+
+  if (isAuthAuditRow(row)) {
+    const authFields: AuditLogDetailKeyValue[] = []
+    const src = newV ?? oldV
+    if (src) {
+      for (const k of ['user_name', 'mobile', 'role_name', 'email']) {
+        if (src[k] != null && src[k] !== '') {
+          authFields.push({
+            field: k,
+            fieldLabel: DETAIL_FIELD_LABELS[k] ?? k.replace(/_/g, ' '),
+            value: formatDetailValue(src[k]),
+          })
+        }
+      }
+    }
+    return {
+      when,
+      who,
+      action,
+      where,
+      changeSummary: 'auth',
+      authFields: authFields.length ? authFields : [{ field: '—', fieldLabel: t('audit.user'), value: who }],
+    }
+  }
 
   if (row.action === 'notification') {
     const items: AuditLogDetailKeyValue[] = []
@@ -228,10 +259,21 @@ export function getAuditLogDetailSections(
   }
 
   if (row.action === 'delete') {
-    const entityLabel = (row.entity_type || 'record').replace(/_/g, ' ')
+    const entityLabel = formatEntityType(row.entity_type || 'record', t).toLowerCase()
     const deletedText = t('audit.detailsModal.deletedRecord')
       .replace('{entity}', entityLabel)
       .replace('{id}', row.entity_id ?? '—')
+    if (oldV && Object.keys(oldV).length > 0) {
+      const createdFields: AuditLogDetailKeyValue[] = Object.entries(oldV)
+        .filter(([, v]) => v !== null && v !== undefined && v !== '')
+        .slice(0, 20)
+        .map(([k, v]) => ({
+          field: k,
+          fieldLabel: DETAIL_FIELD_LABELS[k] ?? k.replace(/_/g, ' '),
+          value: formatDetailValue(v),
+        }))
+      return { when, who, action, where, changeSummary: 'deleted', deletedText, createdFields }
+    }
     return { when, who, action, where, changeSummary: 'deleted', deletedText }
   }
 

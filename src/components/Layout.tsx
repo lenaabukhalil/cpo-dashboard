@@ -5,6 +5,7 @@ import Header from './Header'
 import { Sheet, SheetContent } from './ui/sheet'
 import { useLanguage, useTranslation } from '../context/LanguageContext'
 import { useNodeRedNotificationStream } from '../hooks/useNodeRedNotificationStream'
+import ToastContainer from './ToastContainer'
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -61,6 +62,8 @@ export default function Layout() {
           <p className="mt-1 text-muted-foreground">{forbiddenMessage}</p>
         </div>
       ) : null}
+
+      <ToastContainer />
     </div>
   )
 }

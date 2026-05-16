@@ -571,7 +571,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
                     <tbody>
                       {paginatedLocations.map((loc, i) => (
                         <tr
-                          key={loc.location_id}
+                          key={`${i}-${loc.location_id}`}
                           className={cn(
                             'border-t border-border',
                             i % 2 === 0 ? 'bg-transparent' : 'bg-muted/10',
@@ -633,7 +633,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
                               <tbody>
                                 {paginatedChargerOffline.map((c, i) => (
                                   <tr
-                                    key={c.id}
+                                    key={`${i}-${c.id}`}
                                     className={cn(
                                       'border-b border-border/50 last:border-0 transition-colors',
                                       i % 2 === 0 ? 'bg-transparent' : 'bg-muted/10',
@@ -699,7 +699,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
                               <tbody>
                                 {paginatedChargerOnline.map((c, i) => (
                                   <tr
-                                    key={c.id}
+                                    key={`${i}-${c.id}`}
                                     className={cn(
                                       'border-b border-border/50 last:border-0 transition-colors',
                                       i % 2 === 0 ? 'bg-transparent' : 'bg-muted/10',
@@ -746,7 +746,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
                     <tbody>
                       {paginatedConnectors.map((r, i) => (
                         <tr
-                          key={`${r.chargerId}-${r.connector.id}`}
+                          key={`${i}-${r.connector.id}`}
                           className={cn(
                             'border-t border-border',
                             i % 2 === 0 ? 'bg-transparent' : 'bg-muted/10',
@@ -785,7 +785,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
                     <tbody>
                       {paginatedTariffs.map((r, i) => (
                         <tr
-                          key={`${r.connectorId}-${r.tariff.tariff_id}`}
+                          key={`${i}-${r.tariff.tariff_id}`}
                           className={cn(
                             'border-t border-border',
                             i % 2 === 0 ? 'bg-transparent' : 'bg-muted/10',

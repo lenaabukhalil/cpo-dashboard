@@ -1,9 +1,15 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import type { AuthUser, PermissionMap } from '../services/api'
+import type { AuthUser, PermissionMap, PermissionValue } from '../services/api'
 import { clearGetCache, me } from '../services/api'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
 const CPO_PERMISSIONS_KEY = 'cpo_permissions'
+
+function parsePermissionEntry(v: unknown): PermissionValue | undefined {
+  if (v === true || v === false) return v
+  if (v === 'R' || v === 'RW') return v
+  return undefined
+}
 
 function readStoredPermissions(): PermissionMap {
   try {
@@ -13,7 +19,8 @@ function readStoredPermissions(): PermissionMap {
     if (!p || typeof p !== 'object' || Array.isArray(p)) return {}
     const out: PermissionMap = {}
     for (const [k, v] of Object.entries(p)) {
-      if (v === 'R' || v === 'RW') out[k] = v
+      const entry = parsePermissionEntry(v)
+      if (entry !== undefined) out[k] = entry
     }
     return out
   } catch {

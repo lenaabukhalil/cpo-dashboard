@@ -1,21 +1,32 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
-import { Pencil, Users, UserPlus, X } from 'lucide-react'
-import { canManagePartnerUsers } from '../lib/permissions'
+import { Eye, EyeOff, Pencil, Users, UserPlus, X } from 'lucide-react'
+import { canManagePartnerUsers, hasWritePermission } from '../lib/permissions'
 import { useAuth } from '../context/AuthContext'
-import { usePermission } from '../hooks/usePermission'
 import { useTranslation } from '../context/LanguageContext'
 import {
   getPartnerUsers,
   createPartnerUser,
+  getRoles,
+  type RbacRole,
   updatePartnerUser,
   deletePartnerUser,
   type PartnerUser,
 } from '../services/api'
+import { useToast } from '../contexts/ToastContext'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog'
+import {
+  defaultAddPartnerUserFormValues,
+  stripMobileDigits,
+  validateAddPartnerUserForm,
+  USER_TYPE_OPTIONS,
+  type AddPartnerUserFormValues,
+  type PartnerUserType,
+} from '../lib/partnerUserFormValidation'
 
 const ROLE_OPTIONS: { value: number; labelKey: string; user_type: string }[] = [
   { value: 1, labelKey: 'users.admin', user_type: 'admin' },
@@ -26,22 +37,28 @@ const ROLE_OPTIONS: { value: number; labelKey: string; user_type: string }[] = [
 ]
 
 export default function PartnerUsers() {
-  const { user } = useAuth()
+  const { user, permissions } = useAuth()
   const { t } = useTranslation()
+  const { pushToast } = useToast()
   const roleOptions = ROLE_OPTIONS.map((opt) => ({ value: opt.value, label: t(opt.labelKey), user_type: opt.user_type }))
   /** Role label for display (by role_id); used in table so Engineer shows as "Engineer" not "Operator". */
   const getRoleLabel = (roleId: number) => {
     const opt = ROLE_OPTIONS.find((o) => o.value === roleId)
     return opt ? t(opt.labelKey) : String(roleId)
   }
-  const canWriteUsers = usePermission('users.manage', 'RW')
+  const canCreateUsers = hasWritePermission(permissions, 'users.manage')
   const legacyCanManage = canManagePartnerUsers(user?.role_name)
-  const showWriteUi = canWriteUsers || legacyCanManage
-  const writeActionsEnabled = canWriteUsers
+  const showWriteUi = canCreateUsers || legacyCanManage
+  const writeActionsEnabled = canCreateUsers
   const [list, setList] = useState<PartnerUser[]>([])
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
   const [addOpen, setAddOpen] = useState(false)
+  const [roles, setRoles] = useState<RbacRole[] | null>(null)
+  const [rolesLoading, setRolesLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [addValues, setAddValues] = useState<AddPartnerUserFormValues>(() => defaultAddPartnerUserFormValues())
+  const [addErrors, setAddErrors] = useState<Partial<Record<keyof AddPartnerUserFormValues, string>>>({})
   const [editOpen, setEditOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<PartnerUser | null>(null)
   const [editForm, setEditForm] = useState({
@@ -54,15 +71,6 @@ export default function PartnerUsers() {
     password: '',
   })
   const [submitting, setSubmitting] = useState(false)
-  const [form, setForm] = useState({
-    f_name: '',
-    l_name: '',
-    mobile: '',
-    email: '',
-    role_id: 2,
-    user_type: 'operator',
-    password: '',
-  })
 
   const orgId = user?.organization_id
 
@@ -83,53 +91,90 @@ export default function PartnerUsers() {
     loadUsers()
   }, [orgId])
 
+  const loadRolesOnce = async () => {
+    if (roles || rolesLoading) return
+    setRolesLoading(true)
+    try {
+      const list = await getRoles()
+      setRoles(Array.isArray(list) ? list : [])
+    } finally {
+      setRolesLoading(false)
+    }
+  }
+
+  const closeAddDialog = () => {
+    if (submitting) return
+    setAddOpen(false)
+    setAddValues(defaultAddPartnerUserFormValues())
+    setAddErrors({})
+    setShowPassword(false)
+    setMessage('')
+  }
+
+  const currentValidation = useMemo(() => validateAddPartnerUserForm(addValues), [addValues])
+  const canSubmitAdd = !submitting && canCreateUsers && Object.keys(currentValidation).length === 0
+
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!orgId) return
+    if (!canCreateUsers) return
     setMessage('')
-    if (!form.f_name.trim() || !form.l_name.trim()) {
-      setMessage(t('users.required'))
-      return
-    }
-    if (!form.mobile.trim() || form.mobile.trim().length < 10) {
-      setMessage(t('users.mobileRequired'))
-      return
-    }
-    if (!form.password || form.password.length < 8) {
-      setMessage(t('users.passwordRequired'))
-      return
-    }
+
+    const nextErrors = validateAddPartnerUserForm(addValues)
+    setAddErrors(nextErrors)
+    if (Object.keys(nextErrors).length > 0) return
+
     setSubmitting(true)
+    const mobileDigits = stripMobileDigits(addValues.mobile)
     createPartnerUser({
-      organization_id: orgId,
-      f_name: form.f_name.trim(),
-      l_name: form.l_name.trim(),
-      mobile: form.mobile.trim(),
-      role_id: form.role_id,
-      user_type: form.user_type,
-      password: form.password,
-      email: form.email.trim() || undefined,
+      first_name: addValues.first_name.trim(),
+      last_name: addValues.last_name.trim(),
+      country_code: Number(addValues.country_code),
+      mobile: mobileDigits,
+      email: addValues.email.trim(),
+      password: addValues.password,
+      role_id: Number(addValues.role_id),
+      user_type: addValues.user_type,
     })
       .then((res) => {
         if (res.success) {
-          setAddOpen(false)
-          setForm({ f_name: '', l_name: '', mobile: '', email: '', role_id: 2, user_type: 'operator', password: '' })
+          closeAddDialog()
           loadUsers(true, true)
-          setMessage('')
+          pushToast('Success', 'User added successfully')
         } else {
           const apiMsg = (res as { message?: string }).message || ''
-          const isDuplicateMobile =
-            /mobile number already registered|already exists|duplicate/i.test(apiMsg)
-          setMessage(isDuplicateMobile ? t('users.mobileAlreadyExists') : apiMsg || t('users.addUserFailed'))
+          const status = (res as { statusCode?: number }).statusCode
+
+          if (status === 401) {
+            closeAddDialog()
+            return
+          }
+
+          if (status === 403) {
+            pushToast('Access denied', "You don't have permission to add users")
+            closeAddDialog()
+            return
+          }
+
+          if (status === 400) {
+            const isDuplicateMobile =
+              /mobile number already registered|already exists|duplicate/i.test(apiMsg)
+            if (isDuplicateMobile) {
+              setAddErrors((prev) => ({ ...prev, mobile: 'This mobile number is already registered' }))
+              return
+            }
+            setMessage(apiMsg || 'Failed to add user')
+            return
+          }
+
+          if (status === 500) {
+            pushToast('Error', 'Something went wrong, please try again')
+            return
+          }
+          pushToast('Error', apiMsg || 'Something went wrong, please try again')
         }
       })
-      .catch(() => setMessage(t('users.requestFailed')))
+      .catch(() => pushToast('Error', 'Something went wrong, please try again'))
       .finally(() => setSubmitting(false))
-  }
-
-  const handleRoleChange = (roleId: number) => {
-    const opt = ROLE_OPTIONS.find((o) => o.value === roleId)
-    setForm((f) => ({ ...f, role_id: roleId, user_type: opt?.user_type ?? 'operator' }))
   }
 
   const openEdit = (u: PartnerUser) => {
@@ -207,143 +252,6 @@ export default function PartnerUsers() {
           {t('users.subtitle')}
         </p>
       </div>
-
-      {showWriteUi && (
-        <Card className="border border-border">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <UserPlus className="h-5 w-5" />
-              {t('users.addUser')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Button
-              type="button"
-              disabled={!writeActionsEnabled}
-              title={!writeActionsEnabled ? t('common.readOnlyAccess') : undefined}
-              onClick={() => writeActionsEnabled && setAddOpen(true)}
-            >
-              {t('users.addUser')}
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Add user modal – rendered in body to cover full viewport and avoid white strip */}
-      {addOpen && createPortal(
-        <div
-          className="fixed inset-0 top-0 left-0 right-0 bottom-0 min-h-[100dvh] min-h-[100vh] z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto"
-          onClick={() => !submitting && setAddOpen(false)}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="add-user-title"
-        >
-          <div
-            className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xl p-6 transition-all"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2 mb-6">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <UserPlus className="h-5 w-5" />
-              </div>
-              <h2 id="add-user-title" className="text-lg font-bold text-foreground">
-                {t('users.addUser')}
-              </h2>
-            </div>
-            <form onSubmit={handleAddSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="pu-fname">{t('users.firstName')}</Label>
-                  <Input
-                    id="pu-fname"
-                    value={form.f_name}
-                    onChange={(e) => setForm((f) => ({ ...f, f_name: e.target.value }))}
-                    placeholder={t('users.placeholderFirstName')}
-                    required
-                    className="rounded-lg"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="pu-lname">{t('users.lastName')}</Label>
-                  <Input
-                    id="pu-lname"
-                    value={form.l_name}
-                    onChange={(e) => setForm((f) => ({ ...f, l_name: e.target.value }))}
-                    placeholder={t('users.placeholderLastName')}
-                    required
-                    className="rounded-lg"
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="pu-mobile">{t('users.mobileMinChars')}</Label>
-                <Input
-                  id="pu-mobile"
-                  value={form.mobile}
-                  onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))}
-                  placeholder={t('users.placeholderMobile')}
-                  required
-                  className="rounded-lg"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="pu-email">{t('users.emailOptional')}</Label>
-                <Input
-                  id="pu-email"
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                  placeholder={t('users.placeholderEmail')}
-                  className="rounded-lg"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>{t('users.role')}</Label>
-                <select
-                  className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
-                  value={form.role_id}
-                  onChange={(e) => handleRoleChange(Number(e.target.value))}
-                >
-                  {roleOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="pu-password">{t('users.passwordMinChars')}</Label>
-                <Input
-                  id="pu-password"
-                  type="password"
-                  value={form.password}
-                  onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                  placeholder={t('users.placeholderPassword')}
-                  required
-                  minLength={8}
-                  className="rounded-lg"
-                />
-              </div>
-              {message && <p className="text-sm text-destructive">{message}</p>}
-              <div className="flex gap-3 pt-2">
-                <Button type="submit" disabled={submitting} className="flex-1 rounded-lg">
-                  {submitting ? t('common.loading') : t('users.addUser')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setAddOpen(false)}
-                  disabled={submitting}
-                  className="rounded-lg"
-                >
-                  {t('common.cancel')}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>,
-        document.body
-      )}
 
       {editOpen && editingUser && createPortal(
         <div
@@ -473,10 +381,25 @@ export default function PartnerUsers() {
 
       <Card className="border border-border">
         <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Users className="h-5 w-5" />
-            {t('users.inYourOrg')}
-          </CardTitle>
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Users className="h-5 w-5" />
+              {t('users.inYourOrg')}
+            </CardTitle>
+            {writeActionsEnabled && (
+              <Button
+                type="button"
+                onClick={() => {
+                  setAddOpen(true)
+                  void loadRolesOnce()
+                }}
+                className="shrink-0"
+              >
+                <UserPlus className="mr-2 h-4 w-4 rtl:ml-2 rtl:mr-0" />
+                {t('users.addUser')}
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -498,8 +421,8 @@ export default function PartnerUsers() {
                   </tr>
                 </thead>
                 <tbody>
-                  {list.map((u) => (
-                    <tr key={u.user_id} className="border-b border-border/80 last:border-0 hover:bg-muted/20">
+                  {list.map((u, index) => (
+                    <tr key={u.user_id ?? (u as PartnerUser & { id?: number }).id ?? (u.email?.trim() ? u.email : undefined) ?? index} className="border-b border-border/80 last:border-0 hover:bg-muted/20">
                       <td className="py-3 px-4 font-medium">
                         {u.f_name} {u.l_name}
                       </td>
@@ -546,6 +469,159 @@ export default function PartnerUsers() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={addOpen}
+        onOpenChange={(open) => {
+          if (!open) closeAddDialog()
+          else {
+            setAddOpen(true)
+            void loadRolesOnce()
+          }
+        }}
+      >
+        <DialogContent showClose className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add user</DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleAddSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="pu-first_name">First name</Label>
+                <Input
+                  id="pu-first_name"
+                  value={addValues.first_name}
+                  onChange={(e) => setAddValues((v) => ({ ...v, first_name: e.target.value }))}
+                  placeholder="First name"
+                />
+                {addErrors.first_name ? <p className="text-sm text-destructive">{addErrors.first_name}</p> : null}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="pu-last_name">Last name</Label>
+                <Input
+                  id="pu-last_name"
+                  value={addValues.last_name}
+                  onChange={(e) => setAddValues((v) => ({ ...v, last_name: e.target.value }))}
+                  placeholder="Last name"
+                />
+                {addErrors.last_name ? <p className="text-sm text-destructive">{addErrors.last_name}</p> : null}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="pu-country_code">Country code</Label>
+                <Input
+                  id="pu-country_code"
+                  inputMode="numeric"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={addValues.country_code}
+                  onChange={(e) =>
+                    setAddValues((v) => ({ ...v, country_code: stripMobileDigits(e.target.value) }))
+                  }
+                  placeholder="962"
+                />
+                {addErrors.country_code ? <p className="text-sm text-destructive">{addErrors.country_code}</p> : null}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="pu-mobile">Mobile</Label>
+                <Input
+                  id="pu-mobile"
+                  inputMode="numeric"
+                  value={addValues.mobile}
+                  onChange={(e) => setAddValues((v) => ({ ...v, mobile: stripMobileDigits(e.target.value) }))}
+                  placeholder="788888888"
+                />
+                {addErrors.mobile ? <p className="text-sm text-destructive">{addErrors.mobile}</p> : null}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="pu-email">Email</Label>
+              <Input
+                id="pu-email"
+                type="email"
+                value={addValues.email}
+                onChange={(e) => setAddValues((v) => ({ ...v, email: e.target.value }))}
+                placeholder="name@example.com"
+              />
+              {addErrors.email ? <p className="text-sm text-destructive">{addErrors.email}</p> : null}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="pu-password">Password</Label>
+              <div className="relative">
+                <Input
+                  id="pu-password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={addValues.password}
+                  onChange={(e) => setAddValues((v) => ({ ...v, password: e.target.value }))}
+                  placeholder="At least 8 characters"
+                />
+                <button
+                  type="button"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              {addErrors.password ? <p className="text-sm text-destructive">{addErrors.password}</p> : null}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="pu-role_id">Role</Label>
+              <select
+                id="pu-role_id"
+                className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                value={addValues.role_id}
+                onChange={(e) => setAddValues((v) => ({ ...v, role_id: e.target.value }))}
+                disabled={rolesLoading}
+              >
+                <option value="">{rolesLoading ? 'Loading roles…' : 'Select role'}</option>
+                {(roles ?? []).map((r) => (
+                  <option key={r.id} value={String(r.id)}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+              {addErrors.role_id ? <p className="text-sm text-destructive">{addErrors.role_id}</p> : null}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="pu-user_type">User type</Label>
+              <select
+                id="pu-user_type"
+                className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                value={addValues.user_type}
+                onChange={(e) => setAddValues((v) => ({ ...v, user_type: e.target.value as PartnerUserType }))}
+              >
+                {USER_TYPE_OPTIONS.map((ut) => (
+                  <option key={ut} value={ut}>
+                    {ut}
+                  </option>
+                ))}
+              </select>
+              {addErrors.user_type ? <p className="text-sm text-destructive">{addErrors.user_type}</p> : null}
+            </div>
+
+            {message ? <p className="text-sm text-destructive">{message}</p> : null}
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={closeAddDialog} disabled={submitting}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!canSubmitAdd}>
+                {submitting ? 'Creating…' : 'Create user'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Building2, LogOut, Pencil } from 'lucide-react'
+import { Building2, Pencil } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from '../context/LanguageContext'
@@ -18,9 +18,12 @@ type Props = {
 }
 
 export default function Sidebar({ open: _open = true, onOpenChange, side = 'left', mobile = false }: Props) {
-  const { user, logout, permissions } = useAuth()
+  const { user, permissions } = useAuth()
   const { t } = useTranslation()
-  const canEditOrgLogo = usePermission('organizations.view', 'RW')
+  const organizationsViewRw = usePermission('organizations.view', 'RW')
+  const roleLower = user?.role_name?.toLowerCase() ?? ''
+  const isAdmin = roleLower.includes('admin') || roleLower.includes('owner')
+  const canEditOrgLogo = isAdmin || organizationsViewRw
 
   const roleName = (user?.role_name || 'Admin').toString()
   const first = (user?.f_name || '').toString().trim()
@@ -46,11 +49,6 @@ export default function Sidebar({ open: _open = true, onOpenChange, side = 'left
     if (mobile) onOpenChange?.(false)
   }
 
-  const handleLogout = () => {
-    logout()
-    if (mobile) onOpenChange?.(false)
-  }
-
   const orgId = user?.organization_id ?? null
   const [org, setOrg] = useState<Org | null>(null)
   const [savedLogoUrl, setSavedLogoUrl] = useState('')
@@ -63,7 +61,7 @@ export default function Sidebar({ open: _open = true, onOpenChange, side = 'left
         if (r.success && r.data) {
           const o = r.data as Org
           setOrg(o)
-          const initial = (o.logo || '').trim()
+          const initial = (o.logo_url || '').trim()
           setSavedLogoUrl(initial)
         }
       })
@@ -156,7 +154,7 @@ export default function Sidebar({ open: _open = true, onOpenChange, side = 'left
           {groups.map(([groupLabel, items]) => (
             <div key={groupLabel || 'root'} className="mt-3 first:mt-0">
               {groupLabel ? (
-                <div className="px-3 py-1 text-xs font-semibold tracking-wide text-gray-500 uppercase">
+                <div className="px-3 py-1 text-xs font-semibold tracking-wide text-gray-700">
                   {groupLabel}
                 </div>
               ) : null}
@@ -184,21 +182,6 @@ export default function Sidebar({ open: _open = true, onOpenChange, side = 'left
                         <Icon className="h-4 w-4 shrink-0" />
                         <span className="min-w-0 truncate">{label}</span>
                       </NavLink>
-
-                      {it.to === '/settings' ? (
-                        <button
-                          type="button"
-                          onClick={handleLogout}
-                          className={cn(
-                            'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-destructive transition-colors outline-none',
-                            'hover:bg-destructive/10',
-                            'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                          )}
-                        >
-                          <LogOut className="h-4 w-4 shrink-0" />
-                          <span className="min-w-0 truncate">Logout</span>
-                        </button>
-                      ) : null}
                     </div>
                   )
                 })}
@@ -242,7 +225,7 @@ export default function Sidebar({ open: _open = true, onOpenChange, side = 'left
             currentLogoUrl={savedLogoUrl}
             onSaved={(newUrl) => {
               setSavedLogoUrl(newUrl.trim())
-              setOrg((prev) => (prev ? { ...prev, logo: newUrl.trim() || null } : prev))
+              setOrg((prev) => (prev ? { ...prev, logo_url: newUrl.trim() || null } : prev))
               window.dispatchEvent(new CustomEvent('org-updated'))
             }}
           />

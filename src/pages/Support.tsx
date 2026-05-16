@@ -56,7 +56,6 @@ export default function Support() {
     charger_id: '',
     connector_id: '',
   })
-  const [autoDetectFault, setAutoDetectFault] = useState(false)
   const [locations, setLocations] = useState<{ location_id: number; name: string }[]>([])
   const [chargers, setChargers] = useState<{ id: number; name: string; locationId: number }[]>([])
   const [updatingId, setUpdatingId] = useState<string | null>(null)
@@ -124,7 +123,6 @@ export default function Support() {
       location_id: form.location_id ? Number(form.location_id) : undefined,
       charger_id: form.charger_id ? Number(form.charger_id) : undefined,
       connector_id: form.connector_id.trim() ? Number(form.connector_id) : undefined,
-      auto_detect: autoDetectFault,
     })
       .then((r) => {
         if (r.success) {
@@ -332,19 +330,6 @@ export default function Support() {
               </Button>
             </div>
             <form onSubmit={handleCreate} className="p-6 pt-5 space-y-4 overflow-y-auto flex-1">
-              <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2">
-                <Label htmlFor="auto-detect" className="cursor-pointer text-sm font-normal">{t('support.autoDetect')}</Label>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={autoDetectFault}
-                  id="auto-detect"
-                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border border-input transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${autoDetectFault ? 'bg-primary' : 'bg-muted'}`}
-                  onClick={() => setAutoDetectFault((v) => !v)}
-                >
-                  <span className={`pointer-events-none block h-5 w-5 rounded-full bg-background shadow ring-0 transition-transform ${autoDetectFault ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                </button>
-              </div>
               <div className="space-y-2">
                 <Label htmlFor="ticket-title">{t('support.titleRequired')}</Label>
                 <Input
