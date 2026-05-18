@@ -2,8 +2,6 @@ import { request } from '../services/api'
 
 export type FinancialGranularity = 'hour' | 'day' | 'week' | 'month'
 
-export type FinancialBreakdownGroupBy = 'location' | 'charger' | 'tariff' | 'session_type' | 'connector'
-
 export interface FinancialSummaryData {
   total_revenue: number
   total_energy: number
@@ -11,6 +9,43 @@ export interface FinancialSummaryData {
   total_discount: number
   avg_revenue_per_session: number
   avg_energy_per_session: number
+}
+
+/** Query params shared with sessions-report filters (backend financial-* endpoints). */
+export interface FinancialReportQueryParams {
+  from: string
+  to: string
+  locationIds?: string
+  chargerIds?: string
+  connectorIds?: string
+  energyMin?: string
+  energyMax?: string
+  dateOrder?: 'asc' | 'desc'
+  sessionType?: string
+}
+
+function buildFinancialRequestQuery(params: FinancialReportQueryParams): Record<string, string> {
+  const query: Record<string, string> = { from: params.from, to: params.to }
+  if (params.locationIds != null && String(params.locationIds).trim() !== '') {
+    query.locationIds = String(params.locationIds).trim()
+  }
+  if (params.chargerIds != null && String(params.chargerIds).trim() !== '') {
+    query.chargerIds = String(params.chargerIds).trim()
+  }
+  if (params.connectorIds != null && String(params.connectorIds).trim() !== '') {
+    query.connectorIds = String(params.connectorIds).trim()
+  }
+  if (params.energyMin != null && String(params.energyMin).trim() !== '') {
+    query.energyMin = String(params.energyMin).trim()
+  }
+  if (params.energyMax != null && String(params.energyMax).trim() !== '') {
+    query.energyMax = String(params.energyMax).trim()
+  }
+  if (params.dateOrder === 'asc') query.dateOrder = 'asc'
+  if (params.sessionType != null && String(params.sessionType).trim() !== '') {
+    query.sessionType = String(params.sessionType).trim()
+  }
+  return query
 }
 
 /** Normalize API payload (flat or legacy nested metrics). */
@@ -48,14 +83,6 @@ export function normalizeFinancialSummary(raw: unknown): FinancialSummaryData | 
   }
 }
 
-export interface FinancialBreakdownRow {
-  label: string
-  sessions: number
-  revenue: number
-  energy: number
-  discount: number
-}
-
 /** Row keys match backend JSON (spaces in property names). */
 export type FinancialBillRow = Record<string, string | number | null | undefined>
 
@@ -81,31 +108,23 @@ export function getBillField(row: FinancialBillRow, key: keyof typeof FINANCIAL_
   return row[FINANCIAL_BILL_KEYS[key]]
 }
 
-export async function getFinancialSummary(params: { from: string; to: string }) {
+export async function getFinancialSummary(params: FinancialReportQueryParams) {
   return request<{ data: unknown }>('/api/v4/cpo/financial-summary', {
-    params: { from: params.from, to: params.to },
+    params: buildFinancialRequestQuery(params),
     skipCache: true,
   })
 }
 
-export async function getFinancialBreakdown(params: {
-  from: string
-  to: string
-  groupBy: FinancialBreakdownGroupBy
-}) {
-  return request<{ data: FinancialBreakdownRow[]; count?: number }>('/api/v4/cpo/financial-breakdown', {
-    params: { from: params.from, to: params.to, groupBy: params.groupBy },
+export async function getFinancialTimeseries(params: FinancialReportQueryParams) {
+  return request<{ data: unknown }>('/api/v4/cpo/financial-timeseries', {
+    params: buildFinancialRequestQuery(params),
     skipCache: true,
   })
 }
 
-export async function getFinancialBills(params: { from: string; to: string; dateOrder?: 'asc' | 'desc' }) {
+export async function getFinancialBills(params: FinancialReportQueryParams) {
   return request<{ data: FinancialBillRow[]; count?: number }>('/api/v4/cpo/financial-bills', {
-    params: {
-      from: params.from,
-      to: params.to,
-      dateOrder: params.dateOrder ?? 'desc',
-    },
+    params: buildFinancialRequestQuery(params),
     skipCache: true,
   })
 }

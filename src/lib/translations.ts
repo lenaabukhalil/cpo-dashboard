@@ -5,6 +5,7 @@
 export type Locale = 'en' | 'ar'
 
 const messages: Record<string, { en: string; ar: string }> = {
+  'app.productName': { en: 'ION Charging Point Operator', ar: 'ION لإدارة محطات الشحن' },
   // Nav
   'nav.dashboard': { en: 'Dashboard', ar: 'لوحة التحكم' },
   'nav.mapView': { en: 'Map View', ar: 'عرض الخريطة' },
@@ -114,6 +115,10 @@ const messages: Record<string, { en: string; ar: string }> = {
   'org.loadFailed': { en: 'Failed to load organization', ar: 'فشل تحميل المؤسسة' },
   'org.noData': { en: 'No organization data', ar: 'لا توجد بيانات للمؤسسة' },
   'org.loading': { en: 'Loading organization...', ar: 'جاري تحميل المؤسسة...' },
+  'org.editLogo': { en: 'Edit organization logo', ar: 'تعديل شعار المؤسسة' },
+  'org.editOverview': { en: 'Edit overview', ar: 'تعديل النظرة العامة' },
+  'org.editContact': { en: 'Edit contact', ar: 'تعديل جهة الاتصال' },
+  'org.editDetails': { en: 'Edit additional details', ar: 'تعديل التفاصيل الإضافية' },
 
   // Reports
   'reports.title': { en: 'Reports', ar: 'التقارير' },
@@ -172,14 +177,6 @@ const messages: Record<string, { en: string; ar: string }> = {
   'reports.financial.kpi.avgAmount': { en: 'Avg Revenue / Session', ar: 'متوسط الإيراد / جلسة' },
   'reports.financial.kpi.avgEnergy': { en: 'Avg Energy / Session', ar: 'متوسط الطاقة / جلسة' },
   'reports.financial.kpi.discount': { en: 'Total Discount Given', ar: 'إجمالي الخصومات' },
-  'reports.financial.revenueByBar': { en: 'Revenue by category (top 10)', ar: 'الإيراد حسب الفئة (أعلى 10)' },
-  'reports.financial.groupByLabel': { en: 'Group by', ar: 'تجميع حسب' },
-  'reports.financial.groupBy.location': { en: 'Location', ar: 'موقع' },
-  'reports.financial.groupBy.charger': { en: 'Charger', ar: 'شاحن' },
-  'reports.financial.groupBy.tariff': { en: 'Tariff', ar: 'تعرفة' },
-  'reports.financial.groupBy.session_type': { en: 'Session type', ar: 'نوع الجلسة' },
-  'reports.financial.groupBy.connector': { en: 'Connector', ar: 'موصل' },
-  'reports.financial.revenueJod': { en: 'Revenue (JOD)', ar: 'إيراد (دينار)' },
   'reports.financial.billsTitle': { en: 'Bills detail', ar: 'تفاصيل الفواتير' },
   'reports.financial.exportCsv': { en: 'Export CSV', ar: 'تصدير CSV' },
   'reports.financial.billsCountHint': {
@@ -190,6 +187,7 @@ const messages: Record<string, { en: string; ar: string }> = {
   'reports.financial.col.issueDate': { en: 'Issue Date', ar: 'تاريخ الإصدار' },
   'reports.financial.col.location': { en: 'Location', ar: 'الموقع' },
   'reports.financial.col.charger': { en: 'Charger', ar: 'الشاحن' },
+  'reports.financial.col.connector': { en: 'Connector', ar: 'الموصل' },
   'reports.financial.col.tariff': { en: 'Tariff', ar: 'التعرفة' },
   'reports.financial.col.energy': { en: 'Energy (kWh)', ar: 'الطاقة (كيلوواط ساعة)' },
   'reports.financial.col.amount': { en: 'Amount (JOD)', ar: 'المبلغ (دينار)' },
@@ -358,6 +356,56 @@ const messages: Record<string, { en: string; ar: string }> = {
   // Partner Users
   'users.title': { en: 'Users of Organization', ar: 'مستخدمي المؤسسة' },
   'users.addUser': { en: 'Add user', ar: 'إضافة مستخدم' },
+  'users.addUserDropdownLabel': { en: 'Add user', ar: 'إضافة مستخدم' },
+  'users.addPartnerOption': { en: 'Add Partner User', ar: 'إضافة مستخدم شريك' },
+  'users.addPartnerOptionDescription': {
+    en: 'Staff member who logs into the dashboard',
+    ar: 'موظف يسجل دخول إلى لوحة التحكم',
+  },
+  'users.addRfidOption': { en: 'Add RFID User', ar: 'إضافة مستخدم RFID' },
+  'users.addRfidOptionDescription': {
+    en: 'Customer/employee with an RFID card',
+    ar: 'عميل أو موظف يحمل بطاقة RFID',
+  },
+  'rfid.modalTitleCreate': { en: 'Add New RFID User', ar: 'إضافة مستخدم RFID جديد' },
+  'rfid.uid': { en: 'RFID UID', ar: 'معرف البطاقة' },
+  'rfid.uidPlaceholder': { en: 'e.g., CA6DF16F', ar: 'مثال: CA6DF16F' },
+  'rfid.uidHint': { en: 'Hexadecimal, 4–32 characters', ar: 'أحرف وأرقام (Hex)، 4 إلى 32 خانة' },
+  'rfid.firstName': { en: 'First Name', ar: 'الاسم الأول' },
+  'rfid.lastName': { en: 'Last Name', ar: 'اسم العائلة' },
+  'rfid.countryCode': { en: 'Country Code', ar: 'رمز الدولة' },
+  'rfid.mobile': { en: 'Mobile', ar: 'رقم الموبايل' },
+  'rfid.email': { en: 'Email', ar: 'البريد الإلكتروني' },
+  'rfid.cardType': { en: 'Card Type', ar: 'نوع البطاقة' },
+  'rfid.cardType.employee': { en: 'Employee', ar: 'موظف' },
+  'rfid.cardType.customer': { en: 'Customer', ar: 'عميل' },
+  'rfid.cardType.fleet': { en: 'Fleet', ar: 'أسطول' },
+  'rfid.cardType.vip': { en: 'VIP', ar: 'VIP' },
+  'rfid.cardType.test': { en: 'Test', ar: 'اختبار' },
+  'rfid.cardType.other': { en: 'Other', ar: 'أخرى' },
+  'rfid.status': { en: 'Status', ar: 'الحالة' },
+  'rfid.status.active': { en: 'Active', ar: 'نشط' },
+  'rfid.status.disabled': { en: 'Disabled', ar: 'معطل' },
+  'rfid.status.suspended': { en: 'Suspended', ar: 'موقوف' },
+  'rfid.status.pending': { en: 'Pending', ar: 'قيد الانتظار' },
+  'rfid.allowedLocations': { en: 'Allowed Locations', ar: 'المواقع المسموحة' },
+  'rfid.allowedLocationsHint': {
+    en: 'Leave empty to allow charging at all organization locations',
+    ar: 'اتركه فارغًا للسماح بالشحن في جميع مواقع المنظمة',
+  },
+  'rfid.notes': { en: 'Notes', ar: 'ملاحظات' },
+  'rfid.notesPlaceholder': {
+    en: 'Optional notes about this card...',
+    ar: 'ملاحظات اختيارية...',
+  },
+  'rfid.create': { en: 'Create', ar: 'إنشاء' },
+  'rfid.cancel': { en: 'Cancel', ar: 'إلغاء' },
+  'rfid.createdSuccess': { en: 'RFID user created successfully', ar: 'تم إنشاء مستخدم RFID بنجاح' },
+  'rfid.errors.duplicateUid': { en: 'This RFID card already exists', ar: 'هذه البطاقة موجودة مسبقًا' },
+  'rfid.errors.invalidUid': {
+    en: 'RFID UID must be hexadecimal, 4–32 characters',
+    ar: 'معرف البطاقة يجب أن يكون Hex من 4 إلى 32 خانة',
+  },
   'users.editUser': { en: 'Edit user', ar: 'تعديل المستخدم' },
   'users.firstName': { en: 'First name', ar: 'الاسم الأول' },
   'users.lastName': { en: 'Last name', ar: 'الاسم الأخير' },
@@ -414,6 +462,11 @@ const messages: Record<string, { en: string; ar: string }> = {
   },
 
   'common.readOnlyAccess': { en: 'Read-only access', ar: 'وصول للقراءة فقط' },
+  'common.viewOnly': { en: 'View only', ar: 'عرض فقط' },
+  'common.viewOnlyDescription': {
+    en: "You don't have permission to edit this section",
+    ar: 'ليس لديك صلاحية لتعديل هذا القسم',
+  },
 
   'errors.forbiddenTitle': { en: 'Permission denied', ar: 'تم رفض الإذن' },
   'errors.forbidden': {
@@ -646,6 +699,9 @@ const messages: Record<string, { en: string; ar: string }> = {
   'reports.startDate': { en: 'Start date', ar: 'تاريخ البداية' },
   'reports.endDate': { en: 'End date', ar: 'تاريخ النهاية' },
   'reports.compareAB': { en: 'Compare A vs B', ar: 'مقارنة أ مقابل ب' },
+  'reports.comparison.downloadPdf': { en: 'Download PDF', ar: 'تحميل PDF' },
+  'reports.comparison.downloadingPdf': { en: 'Downloading...', ar: 'جارٍ التحميل...' },
+  'reports.comparison.selectBothSides': { en: 'Select both sides before exporting', ar: 'اختر الجانبين قبل التصدير' },
   'reports.chargerComparison': { en: 'Charger Comparison', ar: 'مقارنة الشواحن' },
   'reports.chargerComparisonDesc': { en: 'Select two chargers and date ranges. Compare utilization, revenue, and energy at a glance', ar: 'اختر شاحنين ونطاقات تاريخ. قارن الاستخدام والإيرادات والطاقة بنظرة واحدة' },
   'reports.connectorComparison': { en: 'Connector Comparison', ar: 'مقارنة الموصلات' },

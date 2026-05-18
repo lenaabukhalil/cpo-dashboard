@@ -4,7 +4,7 @@ import { Menu, Sun, Moon, User, Languages, LogOut, CircleUserRound } from 'lucid
 import { useTheme } from 'next-themes'
 import { HeaderIconButton } from './HeaderIconButton'
 import NotificationBell from './NotificationBell'
-import { useLanguage } from '../context/LanguageContext'
+import { useLanguage, useTranslation } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { getLabel } from '../lib/translations'
 import type { Locale } from '../lib/translations'
@@ -19,6 +19,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
   const { theme, setTheme } = useTheme()
   const { user, logout } = useAuth()
   const { locale, setLocale } = useLanguage()
+  const { t } = useTranslation()
   const [langOpen, setLangOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const langRef = useRef<HTMLDivElement>(null)
@@ -53,17 +54,26 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
   return (
     <header className="app-header sticky top-0 z-50 w-full bg-background">
-      <div className="flex h-14 items-center justify-between px-4 sm:px-6">
-        <div className="lg:hidden">
+      <div className="flex h-14 items-center justify-between gap-4 px-4 sm:px-6">
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+          <div className="shrink-0 lg:hidden">
           <HeaderIconButton
             label={getLabel('header.menu', locale)}
             icon={<Menu className="h-5 w-5" />}
             onClick={onMenuClick}
-            aria-label={getLabel('header.menu', locale)}
-          />
+              aria-label={getLabel('header.menu', locale)}
+            />
+          </div>
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <span className="hidden truncate text-sm font-medium text-foreground sm:inline">
+            {t('app.productName')}
+          </span>
+          <span className="shrink-0 rounded-md border border-border bg-muted/50 px-2 py-0.5 text-xs font-medium text-muted-foreground">
+            v{__APP_VERSION__}
+          </span>
+          </div>
         </div>
-        <div />
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           {/* Language switcher - left of notifications */}
           <div className="relative" ref={langRef}>
             <HeaderIconButton

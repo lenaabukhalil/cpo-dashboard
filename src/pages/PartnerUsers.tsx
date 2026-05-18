@@ -4,7 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
-import { Eye, EyeOff, Pencil, Users, UserPlus, X } from 'lucide-react'
+import { Eye, EyeOff, Pencil, Users, X } from 'lucide-react'
+import { AddUserDropdown } from '../components/AddUserDropdown'
+import { AddRfidUserModal } from '../components/AddRfidUserModal'
 import { canManagePartnerUsers, hasWritePermission } from '../lib/permissions'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from '../context/LanguageContext'
@@ -36,24 +38,42 @@ const ROLE_OPTIONS: { value: number; labelKey: string; user_type: string }[] = [
   { value: 6, labelKey: 'users.accountant', user_type: 'accountant' },
 ]
 
+function partnerUserId(u: PartnerUser): number {
+  return u.user_id ?? u.id ?? 0
+}
+
+/** Display name from API `first_name`/`last_name` (legacy `f_name`/`l_name` fallback). */
+function formatPartnerUserName(user: PartnerUser): string {
+  const full = `${user.first_name ?? user.f_name ?? ''} ${user.last_name ?? user.l_name ?? ''}`.trim()
+  return full || '—'
+}
+
+/** Role label: prefer `role_name` from partner_roles, else humanized `user_type`. */
+function formatPartnerUserRole(user: PartnerUser): string {
+  if (user.role_name?.trim()) return user.role_name.trim()
+  if (user.user_type?.trim()) {
+    const t = user.user_type.trim()
+    return t.charAt(0).toUpperCase() + t.slice(1)
+  }
+  return '—'
+}
+
 export default function PartnerUsers() {
   const { user, permissions } = useAuth()
   const { t } = useTranslation()
   const { pushToast } = useToast()
   const roleOptions = ROLE_OPTIONS.map((opt) => ({ value: opt.value, label: t(opt.labelKey), user_type: opt.user_type }))
-  /** Role label for display (by role_id); used in table so Engineer shows as "Engineer" not "Operator". */
-  const getRoleLabel = (roleId: number) => {
-    const opt = ROLE_OPTIONS.find((o) => o.value === roleId)
-    return opt ? t(opt.labelKey) : String(roleId)
-  }
   const canCreateUsers = hasWritePermission(permissions, 'users.manage')
+  const canCreateRfid = hasWritePermission(permissions, 'rfid.edit')
   const legacyCanManage = canManagePartnerUsers(user?.role_name)
   const showWriteUi = canCreateUsers || legacyCanManage
   const writeActionsEnabled = canCreateUsers
+  const showAddUserMenu = canCreateUsers || canCreateRfid
   const [list, setList] = useState<PartnerUser[]>([])
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
   const [addOpen, setAddOpen] = useState(false)
+  const [rfidAddOpen, setRfidAddOpen] = useState(false)
   const [roles, setRoles] = useState<RbacRole[] | null>(null)
   const [rolesLoading, setRolesLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
@@ -180,8 +200,8 @@ export default function PartnerUsers() {
   const openEdit = (u: PartnerUser) => {
     setEditingUser(u)
     setEditForm({
-      f_name: u.f_name || '',
-      l_name: u.l_name || '',
+      f_name: u.first_name ?? u.f_name ?? '',
+      l_name: u.last_name ?? u.l_name ?? '',
       mobile: u.mobile || '',
       email: u.email || '',
       role_id: u.role_id ?? 2,
@@ -190,6 +210,7 @@ export default function PartnerUsers() {
     })
     setEditOpen(true)
     setMessage('')
+    void loadRolesOnce()
   }
 
   const handleEditRoleChange = (roleId: number) => {
@@ -219,7 +240,7 @@ export default function PartnerUsers() {
       user_type: editForm.user_type,
     }
     if (editForm.password && editForm.password.length >= 8) body.password = editForm.password
-    updatePartnerUser(editingUser.user_id, body)
+    updatePartnerUser(partnerUserId(editingUser), body)
       .then((res) => {
         if (res.success) {
           setEditOpen(false)
@@ -339,11 +360,17 @@ export default function PartnerUsers() {
                   value={editForm.role_id}
                   onChange={(e) => handleEditRoleChange(Number(e.target.value))}
                 >
-                  {roleOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
+                  {(roles ?? []).length > 0
+                    ? (roles ?? []).map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.name}
+                        </option>
+                      ))
+                    : roleOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
                 </select>
               </div>
               <div className="space-y-2">
@@ -386,18 +413,21 @@ export default function PartnerUsers() {
               <Users className="h-5 w-5" />
               {t('users.inYourOrg')}
             </CardTitle>
-            {writeActionsEnabled && (
-              <Button
-                type="button"
-                onClick={() => {
+            {showAddUserMenu && (
+              <AddUserDropdown
+                label={t('users.addUserDropdownLabel')}
+                partnerLabel={t('users.addPartnerOption')}
+                partnerDescription={t('users.addPartnerOptionDescription')}
+                rfidLabel={t('users.addRfidOption')}
+                rfidDescription={t('users.addRfidOptionDescription')}
+                showPartner={canCreateUsers}
+                showRfid={canCreateRfid}
+                onAddPartner={() => {
                   setAddOpen(true)
                   void loadRolesOnce()
                 }}
-                className="shrink-0"
-              >
-                <UserPlus className="mr-2 h-4 w-4 rtl:ml-2 rtl:mr-0" />
-                {t('users.addUser')}
-              </Button>
+                onAddRfid={() => setRfidAddOpen(true)}
+              />
             )}
           </div>
         </CardHeader>
@@ -422,15 +452,15 @@ export default function PartnerUsers() {
                 </thead>
                 <tbody>
                   {list.map((u, index) => (
-                    <tr key={u.user_id ?? (u as PartnerUser & { id?: number }).id ?? (u.email?.trim() ? u.email : undefined) ?? index} className="border-b border-border/80 last:border-0 hover:bg-muted/20">
+                    <tr key={partnerUserId(u) || u.email?.trim() || index} className="border-b border-border/80 last:border-0 hover:bg-muted/20">
                       <td className="py-3 px-4 font-medium">
-                        {u.f_name} {u.l_name}
+                        {formatPartnerUserName(u)}
                       </td>
                       <td className="py-3 px-4 text-muted-foreground">{u.mobile}</td>
                       <td className="py-3 px-4 text-muted-foreground">{u.email ?? '—'}</td>
                       <td className="py-3 px-4">
                         <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
-                          {getRoleLabel(u.role_id ?? 2)}
+                          {formatPartnerUserRole(u)}
                         </span>
                       </td>
                       {showWriteUi && (
@@ -454,7 +484,7 @@ export default function PartnerUsers() {
                               className="h-8 text-destructive hover:text-destructive"
                               disabled={!writeActionsEnabled}
                               title={!writeActionsEnabled ? t('common.readOnlyAccess') : t('support.remove')}
-                              onClick={() => writeActionsEnabled && handleDelete(u.user_id)}
+                              onClick={() => writeActionsEnabled && handleDelete(partnerUserId(u))}
                             >
                               {t('support.remove')}
                             </Button>
@@ -469,6 +499,13 @@ export default function PartnerUsers() {
           )}
         </CardContent>
       </Card>
+
+      <AddRfidUserModal
+        open={rfidAddOpen}
+        organizationId={orgId}
+        onOpenChange={setRfidAddOpen}
+        onSuccess={() => pushToast(t('rfid.createdSuccess'), '')}
+      />
 
       <Dialog
         open={addOpen}

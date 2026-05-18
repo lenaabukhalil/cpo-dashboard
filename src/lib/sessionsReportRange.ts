@@ -64,3 +64,14 @@ export function getTodayMidnightDatetimeLocal(): string {
   const d = String(n.getDate()).padStart(2, '0')
   return `${y}-${m}-${d}T00:00`
 }
+
+/** Current local date and time as `YYYY-MM-DDTHH:mm` (report To field default when date is today). */
+export function getNowDatetimeLocal(): string {
+  const n = new Date()
+  const y = n.getFullYear()
+  const mo = String(n.getMonth() + 1).padStart(2, '0')
+  const d = String(n.getDate()).padStart(2, '0')
+  const h = String(n.getHours()).padStart(2, '0')
+  const mi = String(n.getMinutes()).padStart(2, '0')
+  return `${y}-${mo}-${d}T${h}:${mi}`
+}

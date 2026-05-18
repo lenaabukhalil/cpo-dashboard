@@ -1,18 +1,17 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
+import { Card, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Download } from 'lucide-react'
 import {
-  exportSessionsReport,
-  getSessionsReport,
+  downloadChargerComparisonPdf,
+  downloadConnectorComparisonPdf,
   getChargerComparison,
   getConnectorComparison,
   getLocations,
   getChargers,
   getConnectors,
-  type SessionsReportRow,
   type ChargerComparisonRow,
   type ConnectorComparisonRow,
   type Location,
@@ -20,69 +19,20 @@ import {
   type Connector,
 } from '../services/api'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../contexts/ToastContext'
 import { AppSelect } from '../components/shared/AppSelect'
-import { AppMultiSelect } from '../components/shared/AppMultiSelect'
-import { TablePagination } from '../components/TablePagination'
-import { SessionsReportDateTimeField } from '../components/SessionsReportDateTimeField'
 import { useTranslation } from '../context/LanguageContext'
-import { compareSessionsReportRowsByStartTime, formatMysqlWallClock24h } from '../lib/dateFormat'
-import {
-  getTodayMidnightDatetimeLocal,
-  sanitizeFilenameDateRange,
-  toDateOnlyForComparisonApi,
-  validateSessionsDatetimeRange,
-} from '../lib/sessionsReportRange'
 import FinancialReport from './reports/FinancialReport'
+import { formatDecimal, formatInteger } from '../lib/utils'
 
-type TabId = 'sessions' | 'chargers' | 'connectors' | 'financial'
-
-function decodeHexToAsciiIfPrintable(hex: string): string | null {
-  const s = hex.trim()
-  if (!s || s.length % 2 !== 0) return null
-  if (!/^[0-9a-fA-F]+$/.test(s)) return null
-  // Avoid decoding short tokens that are unlikely to be a phone number.
-  if (s.length < 10) return null
-  try {
-    const bytes: number[] = []
-    for (let i = 0; i < s.length; i += 2) bytes.push(parseInt(s.slice(i, i + 2), 16))
-    const out = String.fromCharCode(...bytes).replace(/\0/g, '').trim()
-    const compact = out.replace(/\s+/g, '')
-    if (/^\+?\d{8,18}$/.test(compact)) return out
-    return null
-  } catch {
-    return null
-  }
-}
-
-function formatMobileDisplay(value: unknown): string {
-  const raw = value == null ? '' : String(value).trim()
-  if (!raw) return '—'
-  // If backend returns VARBINARY/BINARY as hex text, try to decode to readable phone.
-  const decoded = decodeHexToAsciiIfPrintable(raw)
-  if (decoded) return decoded
-  return raw
-}
+type TabId = 'chargers' | 'connectors' | 'financial'
 
 function useReportsTabs(): { id: TabId; labelKey: string }[] {
   return [
-    { id: 'sessions', labelKey: 'reports.tab.sessions' },
+    { id: 'financial', labelKey: 'reports.tab.financial' },
     { id: 'chargers', labelKey: 'reports.tab.chargers' },
     { id: 'connectors', labelKey: 'reports.tab.connectors' },
-    { id: 'financial', labelKey: 'reports.tab.financial' },
   ]
-}
-
-const PER_PAGE_DEFAULT = 10
-
-/** Current local date and time as `YYYY-MM-DDTHH:mm` (sessions To field default when date is today). */
-function getNowDatetimeLocal(): string {
-  const n = new Date()
-  const y = n.getFullYear()
-  const mo = String(n.getMonth() + 1).padStart(2, '0')
-  const d = String(n.getDate()).padStart(2, '0')
-  const h = String(n.getHours()).padStart(2, '0')
-  const mi = String(n.getMinutes()).padStart(2, '0')
-  return `${y}-${mo}-${d}T${h}:${mi}`
 }
 
 function daysBetween(start: string, end: string): number {
@@ -90,12 +40,6 @@ function daysBetween(start: string, end: string): number {
   const b = new Date(end).getTime()
   if (Number.isNaN(a) || Number.isNaN(b)) return 1
   return Math.max(1, Math.round((b - a) / (24 * 60 * 60 * 1000)) + 1)
-}
-
-/** Format number to 7 decimal places for display */
-function fmt7(n: number | undefined | null): string {
-  if (n == null || typeof n !== 'number' || Number.isNaN(n)) return '—'
-  return Number(n).toFixed(7)
 }
 
 function chargerScore(row: ChargerComparisonRow | null, days: number): number {
@@ -122,78 +66,13 @@ function connectorScore(row: ConnectorComparisonRow | null, days: number): numbe
   return (sPerDay + kwhPerDay + amountPerDay + kwhPerSession) / 4
 }
 
-function sessionsRangeValidationMessage(
-  code: NonNullable<ReturnType<typeof validateSessionsDatetimeRange>>,
-  t: (key: string) => string
-): string {
-  switch (code) {
-    case 'required':
-      return t('reports.validationDateRequired')
-    case 'invalidFormat':
-      return t('reports.validationInvalidDateTimeFormat')
-    case 'fromAfterTo':
-      return t('reports.validationFromBeforeTo')
-    default:
-      return t('reports.validationInvalidDate')
-  }
-}
-
 export default function Reports() {
   const { user } = useAuth()
+  const { pushToast } = useToast()
   const { t } = useTranslation()
   const tabs = useReportsTabs()
-  const [tab, setTab] = useState<TabId>('sessions')
-  const [from, setFrom] = useState(() => getTodayMidnightDatetimeLocal())
-  const [to, setTo] = useState(() => getNowDatetimeLocal())
+  const [tab, setTab] = useState<TabId>('financial')
   const [locations, setLocations] = useState<Location[]>([])
-  // Sessions report: null = never loaded, [] = loaded empty, [...] = loaded with data
-  const [sessionsData, setSessionsData] = useState<SessionsReportRow[] | null>(null)
-  const [sessionError, setSessionError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [exportLoading, setExportLoading] = useState(false)
-
-  // Sessions report filters (sent to backend) – multi-select as arrays
-  const [locationIds, setLocationIds] = useState<string[]>([])
-  const [chargerIds, setChargerIds] = useState<string[]>([])
-  const [connectorIds, setConnectorIds] = useState<string[]>([])
-  const [energyMin, setEnergyMin] = useState('')
-  const [energyMax, setEnergyMax] = useState('')
-  /** Chronological sort for the table: applied on the client (see sessionsList) so it matches issue_date even if API orders by session_id. */
-  const [dateOrder, setDateOrder] = useState<'asc' | 'desc'>('desc')
-  const [connectorsForSessionFilter, setConnectorsForSessionFilter] = useState<Connector[]>([])
-
-  // Sessions paging
-  const [pageSession, setPageSession] = useState(1)
-  const [perPageSession, setPerPageSession] = useState(PER_PAGE_DEFAULT)
-
-  // Sessions report: map charger id/chargerID (from report) -> display name (from org chargers)
-  const [allOrgChargers, setAllOrgChargers] = useState<Charger[]>([])
-  const chargerIdToName = useMemo(() => {
-    const m = new Map<string, string>()
-    allOrgChargers.forEach((c) => {
-      const name = c.name ?? ''
-      m.set(String(c.id), name)
-      if (c.charger_id != null) m.set(String(c.charger_id), name)
-      if (c.chargerID) m.set(String(c.chargerID).trim(), name)
-    })
-    return m
-  }, [allOrgChargers])
-
-  // Backend may ORDER BY session_id only; sort by Start Date/Time (issue_date) so "Date order" works
-  const sessionsList = useMemo(() => {
-    const list = sessionsData ?? []
-    if (list.length < 2) return list
-    const next = [...list]
-    next.sort((a, b) => {
-      const c = compareSessionsReportRowsByStartTime(a, b)
-      return dateOrder === 'asc' ? c : -c
-    })
-    return next
-  }, [sessionsData, dateOrder])
-  const paginatedSessions = useMemo(
-    () => sessionsList.slice((pageSession - 1) * perPageSession, pageSession * perPageSession),
-    [sessionsList, pageSession, perPageSession]
-  )
 
   // Charger A vs B
   const [locationAId, setLocationAId] = useState('')
@@ -209,6 +88,7 @@ export default function Reports() {
   const [compareChargerA, setCompareChargerA] = useState<ChargerComparisonRow | null>(null)
   const [compareChargerB, setCompareChargerB] = useState<ChargerComparisonRow | null>(null)
   const [loadingCompareCharger, setLoadingCompareCharger] = useState(false)
+  const [chargerPdfDownloading, setChargerPdfDownloading] = useState(false)
 
   // Connector A vs B
   const [connectorLocAId, setConnectorLocAId] = useState('')
@@ -228,6 +108,7 @@ export default function Reports() {
   const [compareConnectorA, setCompareConnectorA] = useState<ConnectorComparisonRow | null>(null)
   const [compareConnectorB, setCompareConnectorB] = useState<ConnectorComparisonRow | null>(null)
   const [loadingCompareConnector, setLoadingCompareConnector] = useState(false)
+  const [connectorPdfDownloading, setConnectorPdfDownloading] = useState(false)
 
   useEffect(() => {
     if (!user?.organization_id) return
@@ -236,73 +117,6 @@ export default function Reports() {
       setLocations(Array.isArray(d) ? d : [])
     })
   }, [user?.organization_id])
-
-  // Load all org chargers for Sessions report (id/chargerID -> name for display)
-  useEffect(() => {
-    if (!locations.length) {
-      setAllOrgChargers([])
-      return
-    }
-    Promise.all(locations.map((loc) => getChargers(loc.location_id)))
-      .then((results) => {
-        const lists = results.map((r) => {
-          const d = (r as { data?: Charger[] }).data ?? (r as unknown as Charger[])
-          return Array.isArray(d) ? d : []
-        })
-        setAllOrgChargers(lists.flat())
-      })
-      .catch(() => setAllOrgChargers([]))
-  }, [locations])
-
-  // Sessions report: chargers list – when locations selected, filter by them; else all org chargers
-  const sessionChargerOptions = useMemo(() => {
-    if (locationIds.length === 0) return allOrgChargers
-    const set = new Set(locationIds.map((id) => Number(id)))
-    return allOrgChargers.filter((c) => set.has(Number(c.locationId ?? c.id)))
-  }, [allOrgChargers, locationIds])
-
-  // Stable option arrays for multi-select (same references across renders so react-select can match selection)
-  const locationOptions = useMemo(
-    () => locations.map((l) => ({ value: String(l.location_id), label: l.name })),
-    [locations]
-  )
-  const chargerFilterOptions = useMemo(
-    () =>
-      sessionChargerOptions.map((c) => ({
-        value: String(c.charger_id ?? c.id),
-        label: c.name ?? '',
-      })),
-    [sessionChargerOptions]
-  )
-  const connectorFilterOptions = useMemo(
-    () =>
-      connectorsForSessionFilter.map((co) => ({
-        value: String(co.id),
-        label: co.connector_type || co.type || String(co.id),
-      })),
-    [connectorsForSessionFilter]
-  )
-
-  // Sessions report: load connectors when charger filter changes (multi-charger: load all and merge)
-  useEffect(() => {
-    if (chargerIds.length === 0) {
-      setConnectorsForSessionFilter([])
-      setConnectorIds([])
-      return
-    }
-    Promise.all(chargerIds.map((id) => getConnectors(Number(id))))
-      .then((results) => {
-        const lists = results.map((r) => {
-          const d = (r as { data?: Connector[] }).data ?? (r as unknown as Connector[])
-          return Array.isArray(d) ? d : []
-        })
-        const merged = lists.flat()
-        const byId = new Map<number, Connector>()
-        merged.forEach((co) => byId.set(co.id, co))
-        setConnectorsForSessionFilter(Array.from(byId.values()))
-      })
-      .catch(() => setConnectorsForSessionFilter([]))
-  }, [chargerIds])
 
   useEffect(() => {
     if (locationAId) {
@@ -376,61 +190,12 @@ export default function Reports() {
     } else setChargersForConnectorB([])
   }, [connectorLocBId])
 
-  const buildSessionsReportParams = () => {
-    const f = from.trim()
-    const toVal = to.trim()
-    const params: Parameters<typeof getSessionsReport>[0] = { from: f, to: toVal }
-    if (locationIds.length > 0) params.locationIds = locationIds.join(',')
-    if (chargerIds.length > 0) params.chargerIds = chargerIds.join(',')
-    if (connectorIds.length > 0) params.connectorIds = connectorIds.join(',')
-    if (energyMin.trim() !== '') params.energyMin = energyMin.trim()
-    if (energyMax.trim() !== '') params.energyMax = energyMax.trim()
-    if (dateOrder === 'asc') params.dateOrder = 'asc'
-    return params
-  }
-
-  const loadSessions = () => {
-    const f = from.trim()
-    const toVal = to.trim()
-    const rangeErr = validateSessionsDatetimeRange(f, toVal)
-    if (rangeErr) {
-      setSessionError(sessionsRangeValidationMessage(rangeErr, t))
-      return
-    }
-    const minKwh = energyMin.trim() !== '' ? parseFloat(energyMin) : NaN
-    const maxKwh = energyMax.trim() !== '' ? parseFloat(energyMax) : NaN
-    if (!Number.isNaN(minKwh) && !Number.isNaN(maxKwh) && minKwh > maxKwh) {
-      setSessionError(t('reports.validationEnergyRange') || 'Energy Min must be less than or equal to Energy Max')
-      return
-    }
-    setSessionError(null)
-    setLoading(true)
-    setPageSession(1)
-    getSessionsReport(buildSessionsReportParams())
-      .then((r) => {
-        if (!(r as { success?: boolean }).success && (r as { message?: string }).message) {
-          setSessionError((r as { message: string }).message)
-          setSessionsData([])
-          return
-        }
-        const d = (r as { data?: SessionsReportRow[] }).data ?? (r as unknown as { data?: SessionsReportRow[] }).data
-        setSessionsData(Array.isArray(d) ? d : [])
-      })
-      .catch((err) => {
-        setSessionError(err?.message || (err?.payload?.message as string) || 'Failed to load sessions')
-        setSessionsData([])
-      })
-      .finally(() => setLoading(false))
-  }
-
   const runCompareChargerAB = () => {
     if (!chargerAId || !chargerBId) return
-    const fromDay = from ? toDateOnlyForComparisonApi(from) : ''
-    const toDay = to ? toDateOnlyForComparisonApi(to) : ''
-    const sA = startA || fromDay || '2025-01-01'
-    const eA = endA || toDay || '2026-12-31'
-    const sB = startB || fromDay || '2025-01-01'
-    const eB = endB || toDay || '2026-12-31'
+    const sA = startA || '2025-01-01'
+    const eA = endA || '2026-12-31'
+    const sB = startB || '2025-01-01'
+    const eB = endB || '2026-12-31'
     setLoadingCompareCharger(true)
     setCompareChargerA(null)
     setCompareChargerB(null)
@@ -449,12 +214,10 @@ export default function Reports() {
 
   const runCompareConnectorAB = () => {
     if (!connectorAId || !connectorBId || !connectorChargerAId || !connectorChargerBId) return
-    const fromDay = from ? toDateOnlyForComparisonApi(from) : ''
-    const toDay = to ? toDateOnlyForComparisonApi(to) : ''
-    const sA = connectorStartA || fromDay || '2025-01-01'
-    const eA = connectorEndA || toDay || '2026-12-31'
-    const sB = connectorStartB || fromDay || '2025-01-01'
-    const eB = connectorEndB || toDay || '2026-12-31'
+    const sA = connectorStartA || '2025-01-01'
+    const eA = connectorEndA || '2026-12-31'
+    const sB = connectorStartB || '2025-01-01'
+    const eB = connectorEndB || '2026-12-31'
     setLoadingCompareConnector(true)
     setCompareConnectorA(null)
     setCompareConnectorB(null)
@@ -469,28 +232,6 @@ export default function Reports() {
         setCompareConnectorB(Array.isArray(dataB) && dataB.length > 0 ? dataB[0] : null)
       })
       .finally(() => setLoadingCompareConnector(false))
-  }
-
-  const exportSessionsExcel = () => {
-    const f = from.trim()
-    const toVal = to.trim()
-    const rangeErr = validateSessionsDatetimeRange(f, toVal)
-    if (rangeErr) {
-      setSessionError(sessionsRangeValidationMessage(rangeErr, t))
-      return
-    }
-    setExportLoading(true)
-    exportSessionsReport(buildSessionsReportParams())
-      .then(({ blob, filename }) => {
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = filename || `sessions-report-${sanitizeFilenameDateRange(f)}-${sanitizeFilenameDateRange(toVal)}.xlsx`
-        a.click()
-        URL.revokeObjectURL(url)
-      })
-      .catch((err) => setSessionError(err?.message || 'Export failed'))
-      .finally(() => setExportLoading(false))
   }
 
   const daysA = useMemo(() => (startA && endA ? daysBetween(startA, endA) : 1), [startA, endA])
@@ -508,15 +249,62 @@ export default function Reports() {
   const scoreConnectorB = useMemo(() => connectorScore(compareConnectorB, daysConnB), [compareConnectorB, daysConnB])
   const bestConnector = scoreConnectorA >= scoreConnectorB ? 'A' : 'B'
 
-  const clearSessionFilters = () => {
-    setLocationIds([])
-    setChargerIds([])
-    setConnectorIds([])
-    setEnergyMin('')
-    setEnergyMax('')
-    setPageSession(1)
-    setSessionsData(null)
-    setSessionError(null)
+  const handleDownloadChargerPdf = async () => {
+    if (
+      !chargerAId ||
+      !chargerBId ||
+      !startA.trim() ||
+      !endA.trim() ||
+      !startB.trim() ||
+      !endB.trim()
+    ) {
+      pushToast(t('reports.comparison.selectBothSides'), '')
+      return
+    }
+    setChargerPdfDownloading(true)
+    try {
+      await downloadChargerComparisonPdf({
+        chargerA: chargerAId,
+        chargerB: chargerBId,
+        startA: startA.trim(),
+        endA: endA.trim(),
+        startB: startB.trim(),
+        endB: endB.trim(),
+      })
+    } catch (e) {
+      pushToast(t('common.error'), e instanceof Error ? e.message : 'Download failed')
+    } finally {
+      setChargerPdfDownloading(false)
+    }
+  }
+
+  const handleDownloadConnectorPdf = async () => {
+    if (
+      !connectorAId ||
+      !connectorBId ||
+      !connectorStartA.trim() ||
+      !connectorEndA.trim() ||
+      !connectorStartB.trim() ||
+      !connectorEndB.trim()
+    ) {
+      pushToast(t('reports.comparison.selectBothSides'), '')
+      return
+    }
+    setConnectorPdfDownloading(true)
+    try {
+      await downloadConnectorComparisonPdf({
+        connectorA: connectorAId,
+        connectorB: connectorBId,
+        startA: connectorStartA.trim(),
+        endA: connectorEndA.trim(),
+        startB: connectorStartB.trim(),
+        endB: connectorEndB.trim(),
+      })
+    } catch (e) {
+      pushToast(t('common.error'), e instanceof Error ? e.message : 'Download failed')
+    } finally {
+      setConnectorPdfDownloading(false)
+    }
   }
 
   return (
@@ -534,174 +322,7 @@ export default function Reports() {
         ))}
       </div>
 
-      {/* Sessions report */}
-      {tab === 'sessions' && (
-        <Card className="border border-border">
-          <CardHeader className="flex flex-row items-center justify-between gap-2">
-            <CardTitle className="text-base">{t('reports.tab.sessions')}</CardTitle>
-            {(from.trim() && to.trim()) && (
-              <Button type="button" variant="outline" size="sm" onClick={exportSessionsExcel} disabled={exportLoading} className="shrink-0 gap-2">
-                <Download className="h-4 w-4" />
-                {exportLoading ? t('reports.loading') : t('reports.exportCsv')}
-              </Button>
-            )}
-          </CardHeader>
-          <CardContent>
-            {/* Filters: all sent to backend on Load sessions */}
-            <div className="space-y-3 mb-2 pb-4 border-b border-border">
-              <div className="flex flex-wrap items-end gap-3">
-                <div className="min-w-0 shrink-0">
-                  <SessionsReportDateTimeField
-                    fieldLabel={t('reports.from')}
-                    value={from}
-                    onChange={setFrom}
-                    emptyTimeDefault="00:00"
-                  />
-                </div>
-                <div className="min-w-0 shrink-0">
-                  <SessionsReportDateTimeField
-                    fieldLabel={t('reports.to')}
-                    value={to}
-                    onChange={setTo}
-                    emptyTimeDefault="23:59"
-                  />
-                </div>
-                <div className="space-y-1.5 min-w-[180px]">
-                  <Label className="text-xs text-muted-foreground">{t('list.location')}</Label>
-                  <AppMultiSelect
-                    options={locationOptions}
-                    value={locationIds}
-                    onChange={setLocationIds}
-                    placeholder={t('reports.allLocations')}
-                    className="bg-background"
-                  />
-                </div>
-                <div className="space-y-1.5 min-w-[180px]">
-                  <Label className="text-xs text-muted-foreground">{t('list.charger')}</Label>
-                  <AppMultiSelect
-                    options={chargerFilterOptions}
-                    value={chargerIds}
-                    onChange={setChargerIds}
-                    placeholder={t('reports.allChargers')}
-                    className="bg-background"
-                  />
-                </div>
-              </div>
-              <div className="flex flex-wrap items-end gap-3">
-                <div className="space-y-1.5 min-w-[180px]">
-                  <Label className="text-xs text-muted-foreground">{t('list.connectors')}</Label>
-                  <AppMultiSelect
-                    options={connectorFilterOptions}
-                    value={connectorIds}
-                    onChange={setConnectorIds}
-                    placeholder={t('reports.allConnectors')}
-                    className="bg-background"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Energy (KWH)</Label>
-                  <div className="flex h-10 items-center gap-2">
-                    <Input type="number" placeholder="Min" value={energyMin} onChange={(e) => setEnergyMin(e.target.value)} className="h-10 w-24 text-sm rounded-lg" min={0} step="any" />
-                    <span className="text-muted-foreground">–</span>
-                    <Input type="number" placeholder="Max" value={energyMax} onChange={(e) => setEnergyMax(e.target.value)} className="h-10 w-24 text-sm rounded-lg" min={0} step="any" />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">{t('reports.dateSort')}</Label>
-                  <div
-                    className="flex h-10 items-center rounded-lg border border-border bg-muted/30 p-0.5 gap-0.5"
-                    role="group"
-                    aria-label={t('reports.dateSort')}
-                  >
-                    <Button
-                      type="button"
-                      variant={dateOrder === 'desc' ? 'default' : 'ghost'}
-                      size="sm"
-                      className="h-9 shrink-0 px-3 text-xs sm:text-sm"
-                      onClick={() => setDateOrder('desc')}
-                    >
-                      {t('reports.dateSortDesc')}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={dateOrder === 'asc' ? 'default' : 'ghost'}
-                      size="sm"
-                      className="h-9 shrink-0 px-3 text-xs sm:text-sm"
-                      onClick={() => setDateOrder('asc')}
-                    >
-                      {t('reports.dateSortAsc')}
-                    </Button>
-                  </div>
-                </div>
-                <Button type="button" className="h-10" onClick={loadSessions} disabled={loading}>
-                  {loading ? t('reports.loading') : t('reports.loadSessions')}
-                </Button>
-                {(from.trim() || to.trim() || locationIds.length > 0 || chargerIds.length > 0 || connectorIds.length > 0 || energyMin.trim() || energyMax.trim()) && (
-                  <Button type="button" variant="outline" className="h-10" onClick={clearSessionFilters}>
-                    Clear filters
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {sessionError && <p className="text-sm text-destructive py-2">{sessionError}</p>}
-
-            {loading && sessionsData === null ? (
-              <p className="text-sm text-muted-foreground py-4">{t('reports.loading')}</p>
-            ) : sessionsData === null ? (
-              <p className="text-sm text-muted-foreground py-4">{t('reports.selectFiltersAndLoad')}</p>
-            ) : sessionsList.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4">{t('reports.noSessionsMatch')}</p>
-            ) : (
-              <>
-                <p className="text-xs text-muted-foreground mb-2">
-                  Showing {sessionsList.length} session{sessionsList.length !== 1 ? 's' : ''}
-                </p>
-                <div className="overflow-x-auto table-wrap table-wrapper">
-                  <table className="w-full text-sm min-w-[600px]">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="text-left py-2 font-semibold text-foreground">Start Date/Time</th>
-                        <th className="text-left py-2 font-semibold text-foreground">Session ID</th>
-                        <th className="text-left py-2 font-semibold text-foreground">Location</th>
-                        <th className="text-left py-2 font-semibold text-foreground">Charger</th>
-                        <th className="text-left py-2 font-semibold text-foreground">Connector</th>
-                        <th className="text-right py-2 font-semibold text-foreground">Energy (KWH)</th>
-                        <th className="text-right py-2 font-semibold text-foreground pr-6">Amount (JOD)</th>
-                        <th className="text-left py-2 font-semibold text-foreground pl-4 min-w-[120px]">mobile</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paginatedSessions.map((r, i) => (
-                        <tr key={i} className="border-b border-border/50">
-                          <td className="py-2">{formatMysqlWallClock24h(r['Start Date/Time'])}</td>
-                          <td className="py-2">{String(r['Session ID'] ?? '—')}</td>
-                          <td className="py-2">{String(r.Location ?? '—')}</td>
-                          <td className="py-2">{chargerIdToName.get(String(r.Charger ?? '').trim()) ?? r.Charger ?? '—'}</td>
-                          <td className="py-2">{String(r.Connector ?? '—')}</td>
-                          <td className="py-2 text-right">{String(r['Energy (KWH)'] ?? '—')}</td>
-                          <td className="py-2 text-right pr-6">{String(r['Amount (JOD)'] ?? '—')}</td>
-                          <td className="py-2 pl-4 min-w-[120px]">{formatMobileDisplay(r.mobile)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <TablePagination
-                  total={sessionsList.length}
-                  page={pageSession}
-                  perPage={perPageSession}
-                  onPageChange={setPageSession}
-                  onPerPageChange={(n) => {
-                    setPerPageSession(n)
-                    setPageSession(1)
-                  }}
-                />
-              </>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      {tab === 'financial' && <FinancialReport />}
 
       {/* Charger comparison — one white block, all connected */}
       {tab === 'chargers' && (
@@ -778,6 +399,21 @@ export default function Reports() {
             {/* Result cards: Best performer above, then white cards — same block, light border */}
             {!loadingCompareCharger && (compareChargerA != null || compareChargerB != null) && (
               <div className="space-y-4">
+                {compareChargerA != null && compareChargerB != null ? (
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-2 shrink-0"
+                      disabled={chargerPdfDownloading}
+                      onClick={() => void handleDownloadChargerPdf()}
+                    >
+                      <Download className="h-4 w-4" />
+                      {chargerPdfDownloading ? t('reports.comparison.downloadingPdf') : t('reports.comparison.downloadPdf')}
+                    </Button>
+                  </div>
+                ) : null}
                 {compareChargerA?.type && compareChargerB?.type && compareChargerA.type !== compareChargerB.type && (
                   <p className="text-sm text-amber-600 dark:text-amber-400">Different charger types (e.g. AC vs DC) — compare with care.</p>
                 )}
@@ -799,18 +435,18 @@ export default function Reports() {
                     <div className="space-y-4 text-sm">
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Utilization</p>
-                        <div className="flex justify-between"><span>Total Sessions</span><span className="font-semibold tabular-nums">{compareChargerA?.sessionsCount ?? '—'}</span></div>
-                        <div className="flex justify-between mt-1"><span>Sessions/day</span><span className="font-semibold tabular-nums">{fmt7((Number(compareChargerA?.sessionsCount) || 0) / daysA)}</span></div>
+                        <div className="flex justify-between"><span>Total Sessions</span><span className="font-semibold tabular-nums">{formatInteger(compareChargerA?.sessionsCount)}</span></div>
+                        <div className="flex justify-between mt-1"><span>Sessions/day</span><span className="font-semibold tabular-nums">{formatDecimal((Number(compareChargerA?.sessionsCount) || 0) / daysA)}</span></div>
                       </div>
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Revenue</p>
-                        <div className="flex justify-between"><span>Total (JOD)</span><span className="font-semibold tabular-nums">{compareChargerA?.totalAmount != null ? fmt7(Number(compareChargerA.totalAmount)) : '—'}</span></div>
-                        <div className="flex justify-between mt-1"><span>Per day</span><span className="font-semibold tabular-nums">{fmt7((Number(compareChargerA?.totalAmount) || 0) / daysA)}</span></div>
+                        <div className="flex justify-between"><span>Total (JOD)</span><span className="font-semibold tabular-nums">{compareChargerA?.totalAmount != null ? formatDecimal(Number(compareChargerA.totalAmount)) : '—'}</span></div>
+                        <div className="flex justify-between mt-1"><span>Per day</span><span className="font-semibold tabular-nums">{formatDecimal((Number(compareChargerA?.totalAmount) || 0) / daysA)}</span></div>
                       </div>
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Energy</p>
-                        <div className="flex justify-between"><span>Total (kWh)</span><span className="font-semibold tabular-nums">{compareChargerA?.totalKwh != null ? fmt7(Number(compareChargerA.totalKwh)) : '—'}</span></div>
-                        <div className="flex justify-between mt-1"><span>Per session (kWh)</span><span className="font-semibold tabular-nums">{daysA && (Number(compareChargerA?.sessionsCount) || 0) ? fmt7((Number(compareChargerA?.totalKwh) || 0) / (Number(compareChargerA?.sessionsCount) || 0)) : '—'}</span></div>
+                        <div className="flex justify-between"><span>Total (kWh)</span><span className="font-semibold tabular-nums">{compareChargerA?.totalKwh != null ? formatDecimal(Number(compareChargerA.totalKwh)) : '—'}</span></div>
+                        <div className="flex justify-between mt-1"><span>Per session (kWh)</span><span className="font-semibold tabular-nums">{daysA && (Number(compareChargerA?.sessionsCount) || 0) ? formatDecimal((Number(compareChargerA?.totalKwh) || 0) / (Number(compareChargerA?.sessionsCount) || 0)) : '—'}</span></div>
                       </div>
                     </div>
                   </CardContent>
@@ -829,18 +465,18 @@ export default function Reports() {
                     <div className="space-y-4 text-sm">
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Utilization</p>
-                        <div className="flex justify-between"><span>Total Sessions</span><span className="font-semibold tabular-nums">{compareChargerB?.sessionsCount ?? '—'}</span></div>
-                        <div className="flex justify-between mt-1"><span>Sessions/day</span><span className="font-semibold tabular-nums">{fmt7((Number(compareChargerB?.sessionsCount) || 0) / daysB)}</span></div>
+                        <div className="flex justify-between"><span>Total Sessions</span><span className="font-semibold tabular-nums">{formatInteger(compareChargerB?.sessionsCount)}</span></div>
+                        <div className="flex justify-between mt-1"><span>Sessions/day</span><span className="font-semibold tabular-nums">{formatDecimal((Number(compareChargerB?.sessionsCount) || 0) / daysB)}</span></div>
                       </div>
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Revenue</p>
-                        <div className="flex justify-between"><span>Total (JOD)</span><span className="font-semibold tabular-nums">{compareChargerB?.totalAmount != null ? fmt7(Number(compareChargerB.totalAmount)) : '—'}</span></div>
-                        <div className="flex justify-between mt-1"><span>Per day</span><span className="font-semibold tabular-nums">{fmt7((Number(compareChargerB?.totalAmount) || 0) / daysB)}</span></div>
+                        <div className="flex justify-between"><span>Total (JOD)</span><span className="font-semibold tabular-nums">{compareChargerB?.totalAmount != null ? formatDecimal(Number(compareChargerB.totalAmount)) : '—'}</span></div>
+                        <div className="flex justify-between mt-1"><span>Per day</span><span className="font-semibold tabular-nums">{formatDecimal((Number(compareChargerB?.totalAmount) || 0) / daysB)}</span></div>
                       </div>
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Energy</p>
-                        <div className="flex justify-between"><span>Total (kWh)</span><span className="font-semibold tabular-nums">{compareChargerB?.totalKwh != null ? fmt7(Number(compareChargerB.totalKwh)) : '—'}</span></div>
-                        <div className="flex justify-between mt-1"><span>Per session (kWh)</span><span className="font-semibold tabular-nums">{daysB && (Number(compareChargerB?.sessionsCount) || 0) ? fmt7((Number(compareChargerB?.totalKwh) || 0) / (Number(compareChargerB?.sessionsCount) || 0)) : '—'}</span></div>
+                        <div className="flex justify-between"><span>Total (kWh)</span><span className="font-semibold tabular-nums">{compareChargerB?.totalKwh != null ? formatDecimal(Number(compareChargerB.totalKwh)) : '—'}</span></div>
+                        <div className="flex justify-between mt-1"><span>Per session (kWh)</span><span className="font-semibold tabular-nums">{daysB && (Number(compareChargerB?.sessionsCount) || 0) ? formatDecimal((Number(compareChargerB?.totalKwh) || 0) / (Number(compareChargerB?.sessionsCount) || 0)) : '—'}</span></div>
                       </div>
                     </div>
                   </CardContent>
@@ -932,12 +568,24 @@ export default function Reports() {
 
             {loadingCompareConnector && <p className="text-sm text-muted-foreground py-2">Loading comparison...</p>}
 
-            {/* Result cards: Best performer above, then white cards — same block, light border, fmt7, online green */}
+            {/* Result cards: Best performer above, then white cards — same block, light border, online green */}
             {!loadingCompareConnector && (compareConnectorA != null || compareConnectorB != null) && (
               <div className="space-y-4">
-                {compareConnectorA?.connectorType && compareConnectorB?.connectorType && compareConnectorA.connectorType !== compareConnectorB.connectorType && (
-                  <p className="text-sm text-amber-600 dark:text-amber-400">Different connector types — compare with care.</p>
-                )}
+                {compareConnectorA != null && compareConnectorB != null ? (
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-2 shrink-0"
+                      disabled={connectorPdfDownloading}
+                      onClick={() => void handleDownloadConnectorPdf()}
+                    >
+                      <Download className="h-4 w-4" />
+                      {connectorPdfDownloading ? t('reports.comparison.downloadingPdf') : t('reports.comparison.downloadPdf')}
+                    </Button>
+                  </div>
+                ) : null}
                 <p className="text-center text-sm font-semibold text-emerald-600">
                   {bestConnector === 'A' ? 'Connector A — Best performer' : 'Connector B — Best performer'}
                 </p>
@@ -956,24 +604,24 @@ export default function Reports() {
                       <div className="space-y-4 text-sm">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Utilization</p>
-                          <div className="flex justify-between"><span>Total Sessions</span><span className="font-semibold tabular-nums">{compareConnectorA?.sessionsCount ?? '—'}</span></div>
-                          <div className="flex justify-between mt-1"><span>Sessions/day</span><span className="font-semibold tabular-nums">{fmt7((Number(compareConnectorA?.sessionsCount) || 0) / daysConnA)}</span></div>
+                          <div className="flex justify-between"><span>Total Sessions</span><span className="font-semibold tabular-nums">{formatInteger(compareConnectorA?.sessionsCount)}</span></div>
+                          <div className="flex justify-between mt-1"><span>Sessions/day</span><span className="font-semibold tabular-nums">{formatDecimal((Number(compareConnectorA?.sessionsCount) || 0) / daysConnA)}</span></div>
                         </div>
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Revenue</p>
-                          <div className="flex justify-between"><span>Total (JOD)</span><span className="font-semibold tabular-nums">{compareConnectorA?.totalAmount != null ? fmt7(Number(compareConnectorA.totalAmount)) : '—'}</span></div>
-                          <div className="flex justify-between mt-1"><span>Per day</span><span className="font-semibold tabular-nums">{fmt7((Number(compareConnectorA?.totalAmount) || 0) / daysConnA)}</span></div>
+                          <div className="flex justify-between"><span>Total (JOD)</span><span className="font-semibold tabular-nums">{compareConnectorA?.totalAmount != null ? formatDecimal(Number(compareConnectorA.totalAmount)) : '—'}</span></div>
+                          <div className="flex justify-between mt-1"><span>Per day</span><span className="font-semibold tabular-nums">{formatDecimal((Number(compareConnectorA?.totalAmount) || 0) / daysConnA)}</span></div>
                         </div>
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Energy</p>
-                          <div className="flex justify-between"><span>Total (kWh)</span><span className="font-semibold tabular-nums">{compareConnectorA?.totalKwh != null ? fmt7(Number(compareConnectorA.totalKwh)) : '—'}</span></div>
-                          <div className="flex justify-between mt-1"><span>Per session (kWh)</span><span className="font-semibold tabular-nums">{daysConnA && (Number(compareConnectorA?.sessionsCount) || 0) ? fmt7((Number(compareConnectorA?.totalKwh) || 0) / (Number(compareConnectorA?.sessionsCount) || 0)) : '—'}</span></div>
+                          <div className="flex justify-between"><span>Total (kWh)</span><span className="font-semibold tabular-nums">{compareConnectorA?.totalKwh != null ? formatDecimal(Number(compareConnectorA.totalKwh)) : '—'}</span></div>
+                          <div className="flex justify-between mt-1"><span>Per session (kWh)</span><span className="font-semibold tabular-nums">{daysConnA && (Number(compareConnectorA?.sessionsCount) || 0) ? formatDecimal((Number(compareConnectorA?.totalKwh) || 0) / (Number(compareConnectorA?.sessionsCount) || 0)) : '—'}</span></div>
                         </div>
                         {(compareConnectorA?.avgSessionAmount != null || compareConnectorA?.avgSessionMinutes != null) && (
                           <div>
                             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Session</p>
-                            <div className="flex justify-between"><span>Avg/session (JOD)</span><span className="font-semibold tabular-nums">{compareConnectorA?.avgSessionAmount != null ? fmt7(Number(compareConnectorA.avgSessionAmount)) : '—'}</span></div>
-                            <div className="flex justify-between mt-1"><span>Avg duration (min)</span><span className="font-semibold tabular-nums">{compareConnectorA?.avgSessionMinutes != null ? fmt7(Number(compareConnectorA.avgSessionMinutes)) : '—'}</span></div>
+                            <div className="flex justify-between"><span>Avg/session (JOD)</span><span className="font-semibold tabular-nums">{compareConnectorA?.avgSessionAmount != null ? formatDecimal(Number(compareConnectorA.avgSessionAmount)) : '—'}</span></div>
+                            <div className="flex justify-between mt-1"><span>Avg duration (min)</span><span className="font-semibold tabular-nums">{compareConnectorA?.avgSessionMinutes != null ? formatDecimal(Number(compareConnectorA.avgSessionMinutes)) : '—'}</span></div>
                           </div>
                         )}
                       </div>
@@ -993,24 +641,24 @@ export default function Reports() {
                       <div className="space-y-4 text-sm">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Utilization</p>
-                          <div className="flex justify-between"><span>Total Sessions</span><span className="font-semibold tabular-nums">{compareConnectorB?.sessionsCount ?? '—'}</span></div>
-                          <div className="flex justify-between mt-1"><span>Sessions/day</span><span className="font-semibold tabular-nums">{fmt7((Number(compareConnectorB?.sessionsCount) || 0) / daysConnB)}</span></div>
+                          <div className="flex justify-between"><span>Total Sessions</span><span className="font-semibold tabular-nums">{formatInteger(compareConnectorB?.sessionsCount)}</span></div>
+                          <div className="flex justify-between mt-1"><span>Sessions/day</span><span className="font-semibold tabular-nums">{formatDecimal((Number(compareConnectorB?.sessionsCount) || 0) / daysConnB)}</span></div>
                         </div>
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Revenue</p>
-                          <div className="flex justify-between"><span>Total (JOD)</span><span className="font-semibold tabular-nums">{compareConnectorB?.totalAmount != null ? fmt7(Number(compareConnectorB.totalAmount)) : '—'}</span></div>
-                          <div className="flex justify-between mt-1"><span>Per day</span><span className="font-semibold tabular-nums">{fmt7((Number(compareConnectorB?.totalAmount) || 0) / daysConnB)}</span></div>
+                          <div className="flex justify-between"><span>Total (JOD)</span><span className="font-semibold tabular-nums">{compareConnectorB?.totalAmount != null ? formatDecimal(Number(compareConnectorB.totalAmount)) : '—'}</span></div>
+                          <div className="flex justify-between mt-1"><span>Per day</span><span className="font-semibold tabular-nums">{formatDecimal((Number(compareConnectorB?.totalAmount) || 0) / daysConnB)}</span></div>
                         </div>
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Energy</p>
-                          <div className="flex justify-between"><span>Total (kWh)</span><span className="font-semibold tabular-nums">{compareConnectorB?.totalKwh != null ? fmt7(Number(compareConnectorB.totalKwh)) : '—'}</span></div>
-                          <div className="flex justify-between mt-1"><span>Per session (kWh)</span><span className="font-semibold tabular-nums">{daysConnB && (Number(compareConnectorB?.sessionsCount) || 0) ? fmt7((Number(compareConnectorB?.totalKwh) || 0) / (Number(compareConnectorB?.sessionsCount) || 0)) : '—'}</span></div>
+                          <div className="flex justify-between"><span>Total (kWh)</span><span className="font-semibold tabular-nums">{compareConnectorB?.totalKwh != null ? formatDecimal(Number(compareConnectorB.totalKwh)) : '—'}</span></div>
+                          <div className="flex justify-between mt-1"><span>Per session (kWh)</span><span className="font-semibold tabular-nums">{daysConnB && (Number(compareConnectorB?.sessionsCount) || 0) ? formatDecimal((Number(compareConnectorB?.totalKwh) || 0) / (Number(compareConnectorB?.sessionsCount) || 0)) : '—'}</span></div>
                         </div>
                         {(compareConnectorB?.avgSessionAmount != null || compareConnectorB?.avgSessionMinutes != null) && (
                           <div>
                             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Session</p>
-                            <div className="flex justify-between"><span>Avg/session (JOD)</span><span className="font-semibold tabular-nums">{compareConnectorB?.avgSessionAmount != null ? fmt7(Number(compareConnectorB.avgSessionAmount)) : '—'}</span></div>
-                            <div className="flex justify-between mt-1"><span>Avg duration (min)</span><span className="font-semibold tabular-nums">{compareConnectorB?.avgSessionMinutes != null ? fmt7(Number(compareConnectorB.avgSessionMinutes)) : '—'}</span></div>
+                            <div className="flex justify-between"><span>Avg/session (JOD)</span><span className="font-semibold tabular-nums">{compareConnectorB?.avgSessionAmount != null ? formatDecimal(Number(compareConnectorB.avgSessionAmount)) : '—'}</span></div>
+                            <div className="flex justify-between mt-1"><span>Avg duration (min)</span><span className="font-semibold tabular-nums">{compareConnectorB?.avgSessionMinutes != null ? formatDecimal(Number(compareConnectorB.avgSessionMinutes)) : '—'}</span></div>
                           </div>
                         )}
                       </div>
@@ -1022,8 +670,6 @@ export default function Reports() {
           </CardContent>
         </Card>
       )}
-
-      {tab === 'financial' && <FinancialReport />}
 
     </div>
   )

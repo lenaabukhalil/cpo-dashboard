@@ -12,6 +12,7 @@ export type BillsSortKey =
   | 'issueDate'
   | 'location'
   | 'charger'
+  | 'connector'
   | 'tariff'
   | 'energy'
   | 'amount'
@@ -35,6 +36,8 @@ export function billSortValue(row: FinancialBillRow, key: BillsSortKey): string 
       return String(getBillField(row, 'location') ?? '').toLowerCase()
     case 'charger':
       return String(getBillField(row, 'charger') ?? '').toLowerCase()
+    case 'connector':
+      return String(getBillField(row, 'connector') ?? '').toLowerCase()
     case 'tariff':
       return String(getBillField(row, 'tariff') ?? '').toLowerCase()
     case 'energy': {
@@ -88,6 +91,7 @@ export function exportBillsCsv(rows: FinancialBillRow[], filename: string) {
     FINANCIAL_BILL_KEYS.issueDate,
     FINANCIAL_BILL_KEYS.location,
     FINANCIAL_BILL_KEYS.charger,
+    FINANCIAL_BILL_KEYS.connector,
     FINANCIAL_BILL_KEYS.tariff,
     FINANCIAL_BILL_KEYS.energy,
     FINANCIAL_BILL_KEYS.amount,
@@ -177,14 +181,15 @@ export function BillsTable({
         </Button>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="overflow-x-auto table-wrap table-wrapper rounded-lg border border-border">
-          <table className="w-full min-w-[900px] text-sm">
+        <div className="overflow-x-auto table-wrap rounded-lg border border-border">
+          <table className="w-full min-w-[900px] text-sm [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap">
             <thead>
               <tr className="border-b border-border bg-muted/40">
                 {th('billId', t('reports.financial.col.billId'))}
                 {th('issueDate', t('reports.financial.col.issueDate'))}
                 {th('location', t('reports.financial.col.location'))}
                 {th('charger', t('reports.financial.col.charger'))}
+                {th('connector', t('reports.financial.col.connector'))}
                 {th('tariff', t('reports.financial.col.tariff'))}
                 {th('energy', t('reports.financial.col.energy'), 'text-end rtl:text-start')}
                 {th('amount', t('reports.financial.col.amount'), 'text-end rtl:text-start')}
@@ -196,7 +201,7 @@ export function BillsTable({
             <tbody>
               {pageSlice.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={11} className="py-8 text-center text-muted-foreground">
                     {t('reports.noData')}
                   </td>
                 </tr>
@@ -207,6 +212,7 @@ export function BillsTable({
                     <td className="py-2 px-3 text-start text-muted-foreground">{formatDateTime24(getBillField(row, 'issueDate'))}</td>
                     <td className="py-2 px-3 text-start">{String(getBillField(row, 'location') ?? '—')}</td>
                     <td className="py-2 px-3 text-start">{String(getBillField(row, 'charger') ?? '—')}</td>
+                    <td className="py-2 px-3 text-start">{String(getBillField(row, 'connector') ?? '—')}</td>
                     <td className="py-2 px-3 text-start">{String(getBillField(row, 'tariff') ?? '—')}</td>
                     <td className="py-2 px-3 text-end rtl:text-start tabular-nums">{cellMoney(getBillField(row, 'energy'))}</td>
                     <td className="py-2 px-3 text-end rtl:text-start tabular-nums">{cellMoney(getBillField(row, 'amount'))}</td>

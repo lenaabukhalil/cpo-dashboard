@@ -4,8 +4,7 @@ import { Building2, Pencil } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from '../context/LanguageContext'
-import { canAccessPath, getNavItems } from '../lib/permissions'
-import { usePermission } from '../hooks/usePermission'
+import { canAccessPath, getNavItems, hasWritePermission } from '../lib/permissions'
 import { Button } from './ui/button'
 import OrganizationLogoDialog from './OrganizationLogoDialog'
 import { getOrg, type Org } from '../services/api'
@@ -17,20 +16,26 @@ type Props = {
   mobile?: boolean
 }
 
+/** Sidebar header only — strips leading "Organization " from role_name before " Dashboard". */
+function shortRoleTitle(roleName?: string | null): string {
+  if (!roleName?.trim()) return 'Dashboard'
+  let name = roleName.trim()
+  if (name === 'Owner') name = 'Admin'
+  const trimmed = name.replace(/^organization\s+/i, '')
+  return `${trimmed} Dashboard`
+}
+
 export default function Sidebar({ open: _open = true, onOpenChange, side = 'left', mobile = false }: Props) {
   const { user, permissions } = useAuth()
   const { t } = useTranslation()
-  const organizationsViewRw = usePermission('organizations.view', 'RW')
-  const roleLower = user?.role_name?.toLowerCase() ?? ''
-  const isAdmin = roleLower.includes('admin') || roleLower.includes('owner')
-  const canEditOrgLogo = isAdmin || organizationsViewRw
+  const canEditOrganization = hasWritePermission(permissions, 'organizations.manage')
 
   const roleName = (user?.role_name || 'Admin').toString()
   const first = (user?.f_name || '').toString().trim()
   const last = (user?.l_name || '').toString().trim()
   const fullName = [first, last].filter(Boolean).join(' ')
 
-  const title = `${roleName === 'Owner' ? 'Admin' : roleName} Dashboard`
+  const title = shortRoleTitle(user?.role_name || 'Admin')
   const subtitle = `Hello, ${fullName || roleName}`
 
   const nav = getNavItems(user?.role_name).filter((it) =>
@@ -100,19 +105,19 @@ export default function Sidebar({ open: _open = true, onOpenChange, side = 'left
                 title={
                   orgId == null
                     ? undefined
-                    : canEditOrgLogo
+                    : canEditOrganization
                       ? 'Edit organization logo'
                       : t('common.readOnlyAccess')
                 }
-                disabled={orgId != null && !canEditOrgLogo}
+                disabled={orgId != null && !canEditOrganization}
                 className={cn(
                   'relative h-10 w-10 rounded-xl border border-border bg-background flex items-center justify-center shrink-0 overflow-hidden transition-all duration-200',
-                  orgId != null && canEditOrgLogo
+                  orgId != null && canEditOrganization
                     ? 'cursor-pointer group/logo hover:bg-muted/40 hover:border-primary/45 hover:ring-2 hover:ring-ring/60 hover:ring-offset-2 hover:ring-offset-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card'
                     : 'cursor-default opacity-90',
                 )}
                 onClick={() => {
-                  if (orgId != null && canEditOrgLogo) setLogoDialogOpen(true)
+                  if (orgId != null && canEditOrganization) setLogoDialogOpen(true)
                 }}
                 aria-label={orgId != null ? 'Change organization logo' : 'Logo'}
               >
@@ -132,7 +137,7 @@ export default function Sidebar({ open: _open = true, onOpenChange, side = 'left
                     aria-hidden
                   />
                 )}
-                {orgId != null && canEditOrgLogo ? (
+                {orgId != null && canEditOrganization ? (
                   <span
                     aria-hidden
                     className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-[inherit] bg-background/55 opacity-0 transition-opacity duration-200 group-hover/logo:opacity-100"
@@ -192,20 +197,20 @@ export default function Sidebar({ open: _open = true, onOpenChange, side = 'left
 
         <div className="mt-auto border-t border-gray-200 pt-4 mt-4 px-4 pb-5">
           <div className="cursor-pointer transition-colors duration-150 hover:text-gray-600">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex w-5 h-5 items-center justify-center overflow-hidden rounded-md">
-                <img
-                  src="/favicon.png"
-                  alt="App icon"
-                  className="w-5 h-5 object-contain"
-                  onError={(e) => {
-                    ;(e.currentTarget as HTMLImageElement).style.display = 'none'
-                  }}
-                />
-              </span>
-              <span className="text-sm text-gray-500">Powered by: ION</span>
+            <div className="flex items-center gap-3">
+              <img
+                src="/favicon.png"
+                alt="App icon"
+                className="w-8 h-8 object-contain shrink-0 rounded-md"
+                onError={(e) => {
+                  ;(e.currentTarget as HTMLImageElement).style.display = 'none'
+                }}
+              />
+              <div className="flex flex-col">
+                <span className="text-sm text-gray-500">Powered by: ION</span>
+                <span className="text-xs text-gray-400">Electric Vehicle Charging Systems</span>
+              </div>
             </div>
-            <div className="mt-1 text-xs text-gray-400">Electric Vehicle Charging Systems</div>
 
             {mobile ? (
               <div className="pt-3">
@@ -217,12 +222,13 @@ export default function Sidebar({ open: _open = true, onOpenChange, side = 'left
           </div>
         </div>
 
-        {orgId != null ? (
+        {orgId != null && canEditOrganization ? (
           <OrganizationLogoDialog
             open={logoDialogOpen}
             onOpenChange={setLogoDialogOpen}
             organizationId={orgId}
             currentLogoUrl={savedLogoUrl}
+            canEdit={canEditOrganization}
             onSaved={(newUrl) => {
               setSavedLogoUrl(newUrl.trim())
               setOrg((prev) => (prev ? { ...prev, logo_url: newUrl.trim() || null } : prev))

@@ -177,13 +177,18 @@ export async function getOrg(id: number) {
 
 // Partner users (org-scoped)
 export interface PartnerUser {
-  user_id: number
+  user_id?: number
+  id?: number
   organization_id: number
-  f_name: string
-  l_name: string
+  first_name?: string
+  last_name?: string
+  f_name?: string
+  l_name?: string
   mobile: string
   email?: string | null
   role_id: number
+  role_name?: string | null
+  role_code?: string | null
   user_type?: string
   is_active?: number
   last_login_at?: string | null
@@ -252,6 +257,40 @@ export async function createPartnerUser(body: {
     method: 'POST',
     body: JSON.stringify(body),
   })
+}
+
+export interface RfidUserCreatePayload {
+  rfid_uid: string
+  first_name: string
+  last_name: string
+  country_code?: number | null
+  mobile?: number | null
+  email?: string | null
+  card_type?: 'employee' | 'customer' | 'fleet' | 'vip' | 'test' | 'other'
+  status?: 'active' | 'disabled' | 'suspended' | 'pending'
+  allowed_locations?: number[] | null
+  notes?: string | null
+}
+
+/** POST /api/v4/rfid-user — create RFID card for an organization. */
+export async function createRfidUser(
+  payload: RfidUserCreatePayload & { organization_id: number },
+): Promise<{
+  success: boolean
+  message: string
+  insertId?: number
+  statusCode?: number
+}> {
+  const res = await request<{ success?: boolean; message?: string; insertId?: number }>('/api/v4/rfid-user', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  return {
+    success: res.success === true,
+    message: res.message ?? '',
+    insertId: (res as { insertId?: number }).insertId,
+    statusCode: res.statusCode,
+  }
 }
 
 export async function updatePartnerUser(
@@ -819,30 +858,6 @@ export async function getSessionsReport(params: SessionsReportParams) {
   return request<{ success?: boolean; count: number; data: SessionsReportRow[] }>(`${CPO_API}/sessions-report`, { params: query })
 }
 
-/** Export sessions report as XLSX (backend-generated; avoids WPS/Excel re-parsing issues). */
-export async function exportSessionsReport(params: SessionsReportParams): Promise<{ blob: Blob; filename?: string }> {
-  const query: Record<string, string> = { from: params.from, to: params.to }
-  if (params.locationIds != null && String(params.locationIds).trim() !== '') query.locationIds = String(params.locationIds).trim()
-  if (params.chargerIds != null && String(params.chargerIds).trim() !== '') query.chargerIds = String(params.chargerIds).trim()
-  if (params.connectorIds != null && String(params.connectorIds).trim() !== '') query.connectorIds = String(params.connectorIds).trim()
-  if (params.energyMin != null && String(params.energyMin).trim() !== '') query.energyMin = String(params.energyMin).trim()
-  if (params.energyMax != null && String(params.energyMax).trim() !== '') query.energyMax = String(params.energyMax).trim()
-  if (params.dateOrder === 'asc') query.dateOrder = 'asc'
-  const qs = new URLSearchParams(query).toString()
-  const token = getToken()
-  const url = `${BASE}${CPO_API}/sessions-report/export?${qs}`
-  const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-  if (!res.ok) throw new Error(res.statusText)
-  const blob = await res.blob()
-  let filename: string | undefined
-  const disp = res.headers.get('Content-Disposition')
-  if (disp) {
-    const m = disp.match(/filename="?([^";\n]+)"?/i)
-    if (m) filename = m[1].trim()
-  }
-  return { blob, filename }
-}
-
 export interface SessionsReportRow {
   'Start Date/Time'?: string
   'Session ID'?: string
@@ -972,6 +987,88 @@ export interface ConnectorComparisonRow {
   avgSessionKwh?: number
   avgSessionAmount?: number
   avgSessionMinutes?: number
+}
+
+function parseContentDispositionFilename(disp: string | null): string | undefined {
+  if (!disp) return undefined
+  const m = disp.match(/filename="?([^";\n]+)"?/i)
+  return m ? m[1].trim() : undefined
+}
+
+function triggerBlobDownload(blob: Blob, filename: string) {
+  if (!blob.size) throw new Error('Empty response')
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+async function fetchComparisonPdfDownload(path: string, params: Record<string, string>, defaultFilename: string): Promise<void> {
+  const token = getToken()
+  const qs = new URLSearchParams(params).toString()
+  const url = `${BASE}${path}?${qs}`
+  const res = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(text || res.statusText || `Request failed (${res.status})`)
+  }
+  const blob = await res.blob()
+  if (!blob.size) throw new Error('Empty response')
+  const filename = parseContentDispositionFilename(res.headers.get('Content-Disposition')) ?? defaultFilename
+  triggerBlobDownload(blob, filename)
+}
+
+export async function downloadChargerComparisonPdf(params: {
+  chargerA: string | number
+  chargerB: string | number
+  startA: string
+  endA: string
+  startB: string
+  endB: string
+}): Promise<void> {
+  const today = new Date().toISOString().slice(0, 10)
+  await fetchComparisonPdfDownload(
+    `${CPO_API}/charger-comparison/pdf`,
+    {
+      chargerA: String(params.chargerA),
+      chargerB: String(params.chargerB),
+      startA: params.startA,
+      endA: params.endA,
+      startB: params.startB,
+      endB: params.endB,
+    },
+    `charger-comparison-${today}.pdf`,
+  )
+}
+
+export async function downloadConnectorComparisonPdf(params: {
+  connectorA: string | number
+  connectorB: string | number
+  startA: string
+  endA: string
+  startB: string
+  endB: string
+}): Promise<void> {
+  const today = new Date().toISOString().slice(0, 10)
+  await fetchComparisonPdfDownload(
+    `${CPO_API}/connector-comparison/pdf`,
+    {
+      connectorA: String(params.connectorA),
+      connectorB: String(params.connectorB),
+      startA: params.startA,
+      endA: params.endA,
+      startB: params.startB,
+      endB: params.endB,
+    },
+    `connector-comparison-${today}.pdf`,
+  )
 }
 
 // Notifications (organization-scoped: only chargers belonging to the org)

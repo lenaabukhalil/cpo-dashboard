@@ -7,9 +7,7 @@ import { Label } from './ui/label'
 import { cn } from '../lib/utils'
 import { updateOrg } from '../services/api'
 import { isValidLogoUrl } from './ChangeLogoModal'
-import { usePermission } from '../hooks/usePermission'
 import { useTranslation } from '../context/LanguageContext'
-import { useAuth } from '../context/AuthContext'
 
 type PreviewState = 'empty' | 'invalid-url' | 'loading' | 'loaded' | 'load-error'
 
@@ -19,6 +17,8 @@ export type OrganizationLogoDialogProps = {
   organizationId: number
   currentLogoUrl: string
   onSaved?: (newUrl: string) => void
+  /** When false, dialog does not render (read-only users). */
+  canEdit?: boolean
 }
 
 export default function OrganizationLogoDialog({
@@ -27,13 +27,10 @@ export default function OrganizationLogoDialog({
   organizationId,
   currentLogoUrl,
   onSaved,
+  canEdit = true,
 }: OrganizationLogoDialogProps) {
   const { t } = useTranslation()
-  const { user } = useAuth()
-  const organizationsViewRw = usePermission('organizations.view', 'RW')
-  const roleLower = user?.role_name?.toLowerCase() ?? ''
-  const isAdmin = roleLower.includes('admin') || roleLower.includes('owner')
-  const canSaveLogo = isAdmin || organizationsViewRw
+  const canSaveLogo = canEdit
   const [urlInput, setUrlInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [previewState, setPreviewState] = useState<PreviewState>('empty')
@@ -101,6 +98,8 @@ export default function OrganizationLogoDialog({
       setSaving(false)
     }
   }
+
+  if (!canEdit) return null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
