@@ -182,7 +182,7 @@ export function ActiveSessionsChart({ title = 'Active Sessions', points, updated
             style={{ left: `${(hoveredPoint.x / WIDTH) * 100}%`, top: `${Math.max((hoveredPoint.y / HEIGHT) * 100 - 12, 0)}%`, transform: 'translateY(-100%)' }}
           >
             <div className="text-muted-foreground">{formatTooltipTime(hoveredPoint.ts)}</div>
-            <div className="font-medium">Active Sessions : {hoveredPoint.count}</div>
+            <div className="font-medium">Active Sessions at this time : {hoveredPoint.count}</div>
           </div>
         )}
       </div>

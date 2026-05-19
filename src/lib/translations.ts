@@ -83,7 +83,7 @@ const messages: Record<string, { en: string; ar: string }> = {
   'dashboard.connectors': { en: 'Connectors', ar: 'الموصلات' },
   'dashboard.availableTotal': { en: 'Available / Total', ar: 'متاح / الإجمالي' },
   'dashboard.offlineChargers': { en: 'Offline Chargers', ar: 'الشواحن غير المتصلة' },
-  'dashboard.activeSessions24h': { en: 'Active Sessions (24h)', ar: 'الجلسات النشطة (24 ساعة)' },
+  'dashboard.activeSessions24h': { en: 'Active Sessions History (24h)', ar: 'سجل الجلسات النشطة (24 ساعة)' },
   'dashboard.viewMonitor': { en: 'View Monitor', ar: 'عرض المراقبة' },
   'dashboard.noActiveSessions': { en: 'No active sessions', ar: 'لا توجد جلسات نشطة' },
   'dashboard.loading': { en: 'Loading...', ar: 'جاري التحميل...' },

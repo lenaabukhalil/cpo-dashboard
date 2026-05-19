@@ -159,6 +159,7 @@ export default function Dashboard() {
         <Card className="border border-border">
           <CardContent className="p-4 flex items-center justify-between gap-4">
             <div className="min-w-0">
+              {/* Live count from /api/v4/cpo/stats (active now); chart below is historical point-in-time — intentionally different. */}
               <p className="text-sm text-muted-foreground">{t('dashboard.activeSessions')}</p>
               {loading ? (
                 <div className="h-8 w-20 rounded bg-muted animate-pulse mt-1" />
@@ -237,6 +238,7 @@ export default function Dashboard() {
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <BarChart3 className="h-4 w-4 shrink-0" />
+              {/* Historical point-in-time counts (24h); summary card above is live — intentionally different. */}
               {t('dashboard.activeSessions24h')}
             </CardTitle>
           </CardHeader>
