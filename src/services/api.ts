@@ -37,7 +37,12 @@ export function clearGetCache(): void {
 
 export async function request<T>(
   path: string,
-  opts: RequestInit & { params?: Record<string, string>; noAuth?: boolean; skipCache?: boolean } = {}
+  opts: RequestInit & {
+    params?: Record<string, string>
+    noAuth?: boolean
+    skipCache?: boolean
+    _retried?: boolean
+  } = {}
 ): Promise<{
   data?: T
   success: boolean
@@ -45,7 +50,7 @@ export async function request<T>(
   statusCode?: number
   requiredPermission?: string
 }> {
-  const { params, noAuth, skipCache, signal: userSignal, ...init } = opts
+  const { params, noAuth, skipCache, _retried, signal: userSignal, ...init } = opts
   const url = new URL(path, window.location.origin)
   if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v))
   const fullPath = url.pathname + url.search
@@ -108,7 +113,16 @@ export async function request<T>(
       } as { data?: T; success: boolean; message?: string; statusCode?: number; requiredPermission?: string }
     }
 
-    if (res.status === 401 && !fullPath.includes('auth/login')) {
+    if (
+      res.status === 401 &&
+      !fullPath.includes('auth/login') &&
+      !fullPath.includes('auth/refresh')
+    ) {
+      const { performRefresh } = await import('../lib/tokenRefresh')
+      const refreshed = await performRefresh()
+      if (refreshed && !_retried) {
+        return request<T>(path, { ...opts, _retried: true } as typeof opts)
+      }
       clearGetCache()
       localStorage.removeItem('cpo_token')
       localStorage.removeItem('cpo_permissions')
@@ -148,6 +162,13 @@ export async function logoutApi() {
     method: 'POST',
     body: JSON.stringify({}),
   })
+}
+
+export async function refreshToken() {
+  return request<{ token: string; user: AuthUser; permissions: PermissionMap }>(
+    '/api/v4/auth/refresh',
+    { method: 'POST', body: JSON.stringify({}), skipCache: true },
+  )
 }
 
 export async function updateProfile(body: { f_name?: string; l_name?: string; email?: string; mobile?: string }) {

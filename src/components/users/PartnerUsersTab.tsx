@@ -436,7 +436,7 @@ export function PartnerUsersTab() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-password">{t('users.newPasswordOptional')}</Label>
-                <Input id="edit-password" type="password" value={editForm.password} onChange={(e) => setEditForm((f) => ({ ...f, password: e.target.value }))} minLength={8} className="rounded-lg" />
+                <Input id="edit-password" type="password" autoComplete="new-password" value={editForm.password} onChange={(e) => setEditForm((f) => ({ ...f, password: e.target.value }))} minLength={8} className="rounded-lg" />
               </div>
               {message ? <p className="text-sm text-destructive">{message}</p> : null}
               <div className="flex gap-3 pt-2">
@@ -491,7 +491,7 @@ export function PartnerUsersTab() {
             <div className="space-y-2">
               <Label htmlFor="pu-password">{t('users.password')}</Label>
               <div className="relative">
-                <Input id="pu-password" type={showPassword ? 'text' : 'password'} value={addValues.password} onChange={(e) => setAddValues((v) => ({ ...v, password: e.target.value }))} />
+                <Input id="pu-password" type={showPassword ? 'text' : 'password'} autoComplete="new-password" value={addValues.password} onChange={(e) => setAddValues((v) => ({ ...v, password: e.target.value }))} />
                 <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" onClick={() => setShowPassword((v) => !v)}>
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>

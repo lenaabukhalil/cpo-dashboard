@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import type { AuthUser, PermissionMap, PermissionValue } from '../services/api'
 import { clearGetCache, me } from '../services/api'
+import { startTokenRefresh, stopTokenRefresh } from '../lib/tokenRefresh'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
 const CPO_PERMISSIONS_KEY = 'cpo_permissions'
@@ -53,21 +54,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [permissions, setPermissions] = useState<PermissionMap>(readStoredPermissions)
   const [loading, setLoading] = useState(true)
 
-  const setAuth = useCallback((u: AuthUser | null, perms?: PermissionMap | null) => {
-    setUser(u)
-    if (!u) {
-      setPermissions({})
-      try {
+  const beginRefreshLoop = useCallback(() => {
+    stopTokenRefresh()
+    startTokenRefresh(
+      (freshUser, freshPerms) => {
+        setUser(freshUser)
+        setPermissions(freshPerms)
+        persistPermissions(freshPerms)
+      },
+      () => {
+        localStorage.removeItem('cpo_token')
         localStorage.removeItem(CPO_PERMISSIONS_KEY)
-      } catch {
-        /* ignore */
-      }
-      return
-    }
-    const next = perms ?? {}
-    setPermissions(next)
-    persistPermissions(next)
+        setUser(null)
+        setPermissions({})
+        stopTokenRefresh()
+      },
+    )
   }, [])
+
+  const setAuth = useCallback(
+    (u: AuthUser | null, perms?: PermissionMap | null) => {
+      setUser(u)
+      if (!u) {
+        setPermissions({})
+        try {
+          localStorage.removeItem(CPO_PERMISSIONS_KEY)
+        } catch {
+          /* ignore */
+        }
+        return
+      }
+      const next = perms ?? {}
+      setPermissions(next)
+      persistPermissions(next)
+      beginRefreshLoop()
+    },
+    [beginRefreshLoop],
+  )
 
   useEffect(() => {
     const token = localStorage.getItem('cpo_token')
@@ -87,6 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(u)
           setPermissions(perms)
           persistPermissions(perms)
+          beginRefreshLoop()
         } else {
           localStorage.removeItem('cpo_token')
           localStorage.removeItem(CPO_PERMISSIONS_KEY)
@@ -96,9 +120,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       })
       .finally(() => setLoading(false))
-  }, [])
+  }, [beginRefreshLoop])
 
   const logout = () => {
+    stopTokenRefresh()
     const token = localStorage.getItem('cpo_token')
     localStorage.removeItem('cpo_token')
     localStorage.removeItem(CPO_PERMISSIONS_KEY)

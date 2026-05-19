@@ -24,6 +24,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
   const [profileOpen, setProfileOpen] = useState(false)
   const langRef = useRef<HTMLDivElement>(null)
   const profileRef = useRef<HTMLDivElement>(null)
+  const profileTriggerRef = useRef<HTMLButtonElement>(null)
   const fullName = [user?.f_name, user?.l_name].filter(Boolean).join(' ').trim()
   const userLabel = fullName || user?.role_name || 'User'
 
@@ -38,11 +39,15 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
   useEffect(() => {
     if (!profileOpen) return
+    const closeProfileMenu = () => {
+      setProfileOpen(false)
+      queueMicrotask(() => profileTriggerRef.current?.focus())
+    }
     const onOutside = (e: MouseEvent) => {
-      if (profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false)
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) closeProfileMenu()
     }
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setProfileOpen(false)
+      if (e.key === 'Escape') closeProfileMenu()
     }
     document.addEventListener('mousedown', onOutside)
     document.addEventListener('keydown', onKeyDown)
@@ -115,6 +120,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
           />
           <div className="relative" ref={profileRef}>
             <HeaderIconButton
+              ref={profileTriggerRef}
               label={getLabel('header.profile', locale)}
               icon={<User className="h-5 w-5" />}
               onClick={() => setProfileOpen((o) => !o)}
@@ -126,7 +132,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
                 profileOpen ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 -translate-y-1 pointer-events-none',
               )}
               role="menu"
-              aria-hidden={!profileOpen}
+              {...(!profileOpen ? { inert: '' as unknown as boolean } : {})}
             >
               <div className="border-b border-gray-100 px-3 py-2">
                 <div className="flex items-center gap-2">

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { forwardRef, type ReactNode } from 'react'
 import { Button } from './ui/button'
 import { cn } from '../lib/utils'
 
@@ -16,18 +16,22 @@ type HeaderIconButtonProps = {
 /**
  * Top bar icon: dark black by default, on hover blue circle + white icon + white rounded label below.
  */
-export function HeaderIconButton({
-  label,
-  icon,
-  onClick,
-  'aria-label': ariaLabel,
-  className,
-  children,
-  badge,
-}: HeaderIconButtonProps) {
+export const HeaderIconButton = forwardRef<HTMLButtonElement, HeaderIconButtonProps>(function HeaderIconButton(
+  {
+    label,
+    icon,
+    onClick,
+    'aria-label': ariaLabel,
+    className,
+    children,
+    badge,
+  },
+  ref,
+) {
   return (
     <div className="relative group">
       <Button
+        ref={ref}
         variant="ghost"
         size="icon"
         onClick={onClick}
@@ -53,4 +57,4 @@ export function HeaderIconButton({
       {children}
     </div>
   )
-}
+})
