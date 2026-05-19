@@ -1,7 +1,9 @@
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
-import { ACCOUNTANT_HOME_PATH, canAccessPath, getRole } from './lib/permissions'
+import { getRole } from './lib/permissions'
+import { getDefaultHomePath } from './config/sidebar'
 import Layout from './components/Layout'
+import RoleGuard from './components/RoleGuard'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Org from './pages/Org'
@@ -22,38 +24,6 @@ import NotificationDetail from './pages/NotificationDetail'
 import { NotificationProvider } from './contexts/NotificationContext'
 import { ToastProvider } from './contexts/ToastContext'
 
-function isOperator(roleName: string | undefined): boolean {
-  return (roleName || '').toLowerCase() === 'operator'
-}
-
-function isEngineer(roleName: string | undefined): boolean {
-  return (roleName || '').toLowerCase() === 'engineer'
-}
-
-function isManager(roleName: string | undefined): boolean {
-  return (roleName || '').toLowerCase() === 'manager'
-}
-
-function isViewer(roleName: string | undefined): boolean {
-  return (roleName || '').toLowerCase() === 'viewer'
-}
-
-function RoleGuard({ children }: { children: React.ReactNode }) {
-  const { user, loading, permissions } = useAuth()
-  const location = useLocation()
-  if (loading || !user) return null
-  const path = location.pathname.replace(/\/$/, '') || '/'
-  if (!canAccessPath(user.role_name, path, permissions)) {
-    if (getRole(user.role_name) === 'accountant') return <Navigate to={ACCOUNTANT_HOME_PATH} replace />
-    if (isViewer(user.role_name)) return <Navigate to="/" replace />
-    if (isEngineer(user.role_name)) return <Navigate to="/" replace />
-    if (isManager(user.role_name)) return <Navigate to="/" replace />
-    if (isOperator(user.role_name)) return <Navigate to="/" replace />
-    return <Navigate to="/details" replace />
-  }
-  return <>{children}</>
-}
-
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
   if (loading) {
@@ -70,8 +40,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function IndexRedirect() {
   const { user } = useAuth()
-  if (getRole(user?.role_name) === 'accountant') {
-    return <Navigate to={ACCOUNTANT_HOME_PATH} replace />
+  if (getRole(user?.role_code, user?.role_name) === 'accountant') {
+    return <Navigate to={getDefaultHomePath(user?.role_code, user?.role_name)} replace />
   }
   return <Dashboard />
 }

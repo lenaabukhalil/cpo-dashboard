@@ -310,7 +310,7 @@ export default function Organization() {
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
                     {t('org.organizationId')}
                   </p>
-                  <p className="font-mono text-sm text-foreground">{org.organization_id}</p>
+                  <p className="font-mono text-sm text-foreground">{org.id}</p>
                 </div>
                 <div className="sm:col-span-2 sm:col-start-1">
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">{t('org.name')}</p>

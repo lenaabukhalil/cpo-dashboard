@@ -56,18 +56,6 @@ const defaultCreateForm = (): CreateFormState => ({
   ends_at: '',
 })
 
-function isPlatformAdmin(roleName: string | undefined): boolean {
-  const r = (roleName || '').toLowerCase().trim()
-  return (
-    r === 'admin' ||
-    r === 'owner' ||
-    r === 'platform_admin' ||
-    r === 'platform admin' ||
-    r.includes('admin') ||
-    r.includes('owner')
-  )
-}
-
 function flagOn(v: number | undefined): boolean {
   return Number(v) === 1
 }
@@ -153,10 +141,12 @@ function PermissionBadges({ grant, t }: { grant: Grant; t: (k: string) => string
 }
 
 export default function Grants() {
-  const { user } = useAuth()
+  const { user, permissions } = useAuth()
   const { t } = useTranslation()
   const orgId = user?.organization_id
-  const platformAdmin = isPlatformAdmin(user?.role_name)
+  const platformAdmin =
+    permissions?.['global.access'] === true ||
+    (user?.role_name ?? '').toLowerCase().trim() === 'platform_admin'
 
   const [activeTab, setActiveTab] = useState<TabId>('incoming')
   const [allGrants, setAllGrants] = useState<Grant[]>([])
@@ -173,13 +163,21 @@ export default function Grants() {
     [t],
   )
 
-  const tabs = useMemo(
-    () => [
-      { id: 'incoming' as const, label: t('grants.tab.incoming') },
-      { id: 'outgoing' as const, label: t('grants.tab.outgoing') },
-    ],
-    [t],
-  )
+  const tabs = useMemo(() => {
+    const base: { id: TabId; label: string }[] = [
+      { id: 'incoming', label: t('grants.tab.incoming') },
+    ]
+    if (platformAdmin) {
+      base.push({ id: 'outgoing', label: t('grants.tab.outgoing') })
+    }
+    return base
+  }, [t, platformAdmin])
+
+  useEffect(() => {
+    if (!platformAdmin && activeTab === 'outgoing') {
+      setActiveTab('incoming')
+    }
+  }, [platformAdmin, activeTab])
 
   const loadGrants = useCallback((silent = false) => {
     if (!silent) setLoading(true)

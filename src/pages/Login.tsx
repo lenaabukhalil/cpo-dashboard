@@ -3,6 +3,7 @@ import { useNavigate, Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from '../context/LanguageContext'
 import { login, type AuthUser, type PermissionMap } from '../services/api'
+import { getDefaultHomePath } from '../config/sidebar'
 import { Card, CardContent, CardHeader } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -17,7 +18,7 @@ export default function Login() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  if (user) return <Navigate to="/" replace />
+  if (user) return <Navigate to={getDefaultHomePath(user.role_code, user.role_name)} replace />
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -50,9 +51,14 @@ export default function Login() {
       {}
     if (res.success && token) {
       localStorage.setItem('cpo_token', token)
-      if (userObj) setAuth(userObj as AuthUser, perms)
-      else setAuth(null)
-      navigate('/')
+      if (userObj) {
+        const authUser = userObj as AuthUser
+        setAuth(authUser, perms)
+        navigate(getDefaultHomePath(authUser.role_code, authUser.role_name))
+      } else {
+        setAuth(null)
+        navigate('/')
+      }
     } else {
       const apiMsg = (err.message || err.error || err.details || '').trim().toLowerCase()
       if (apiMsg.includes('invalid email') || apiMsg.includes('user not found')) {

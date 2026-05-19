@@ -531,22 +531,35 @@ export default function Support() {
         document.body
       )}
 
-      {deleteConfirmId && (
-        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 min-h-[100dvh] min-h-[100vh] z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-[1px]" role="dialog" aria-modal="true" aria-labelledby="delete-ticket-title">
-          <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-lg">
-            <h3 id="delete-ticket-title" className="text-lg font-semibold text-foreground">{t('support.deleteConfirmTitle')}</h3>
-            <p className="text-sm text-muted-foreground mt-2">{t('support.deleteConfirmDesc')}</p>
-            <div className="flex gap-2 mt-4">
-              <Button type="button" variant="outline" className="flex-1" onClick={() => setDeleteConfirmId(null)}>
+      {deleteConfirmId &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-ticket-title"
+            onClick={() => setDeleteConfirmId(null)}
+          >
+            <div
+              className="relative z-10 w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+            <h3 id="delete-ticket-title" className="text-lg font-semibold text-foreground">
+              {t('support.deleteConfirmTitle')}
+            </h3>
+            <p className="mt-2 text-sm text-muted-foreground">{t('support.deleteConfirmDesc')}</p>
+            <div className="mt-6 flex justify-end gap-3">
+              <Button type="button" variant="outline" onClick={() => setDeleteConfirmId(null)}>
                 {t('common.cancel')}
               </Button>
-              <Button type="button" variant="destructive" className="flex-1" onClick={confirmDelete}>
+              <Button type="button" variant="destructive" onClick={confirmDelete}>
                 {t('support.delete')}
               </Button>
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
     </div>
   )
 }

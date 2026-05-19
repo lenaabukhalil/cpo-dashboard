@@ -39,7 +39,35 @@ export type RfidUserValidationMessages = {
   lastNameRequired: string
   lastNameLength: string
   emailInvalid: string
+  mobileInvalid: string
+  countryCodeInvalid: string
   notesMaxLength: string
+}
+
+export function rfidUserToFormValues(user: {
+  rfid_uid: string
+  first_name: string
+  last_name: string
+  country_code?: number | null
+  mobile?: number | string | null
+  email?: string | null
+  card_type: RfidCardType
+  status: RfidStatus
+  allowed_locations?: number[] | null
+  notes?: string | null
+}): AddRfidUserFormValues {
+  return {
+    rfid_uid: user.rfid_uid,
+    first_name: user.first_name,
+    last_name: user.last_name,
+    country_code: user.country_code != null ? String(user.country_code) : '',
+    mobile: user.mobile != null ? String(user.mobile).replace(/\D/g, '') : '',
+    email: user.email ?? '',
+    card_type: user.card_type,
+    status: user.status,
+    allowed_location_ids: (user.allowed_locations ?? []).map(String),
+    notes: user.notes ?? '',
+  }
 }
 
 export function validateAddRfidUserForm(
@@ -62,6 +90,12 @@ export function validateAddRfidUserForm(
 
   const email = values.email.trim()
   if (email && !EMAIL_RE.test(email)) errors.email = messages.emailInvalid
+
+  const mobile = values.mobile.trim()
+  if (mobile && mobile.length < 7) errors.mobile = messages.mobileInvalid
+
+  const cc = values.country_code.trim()
+  if (cc && !/^\d+$/.test(cc)) errors.country_code = messages.countryCodeInvalid
 
   if (values.notes.length > 500) errors.notes = messages.notesMaxLength
 

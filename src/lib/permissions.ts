@@ -4,23 +4,18 @@
  */
 
 import type { ComponentType } from 'react'
-import {
-  Home,
-  Building2,
-  List,
-  Activity,
-  FileText,
-  Wrench,
-  Users,
-  Share2,
-  Map,
-  Table,
-  ScrollText,
-} from 'lucide-react'
 
 export type Access = 'R' | 'RW'
 export type { PermissionMap, PermissionValue } from '../services/api'
 import type { PermissionMap } from '../services/api'
+import {
+  getSidebarNavItems,
+  isPathAllowedForRole,
+  normalizeRoleCode,
+  type RoleCode,
+} from '../config/sidebar'
+
+export { ACCOUNTANT_HOME_PATH } from '../config/sidebar'
 
 /** Map UI route → required permission code + minimum access. Codes must match `ocpp_CSGO.Permissions.code` exactly. */
 export const ROUTE_PERMISSIONS: Record<string, { code: string; access: Access }> = {
@@ -85,32 +80,24 @@ function normalizeRole(roleName: string | undefined): Role | null {
   return null
 }
 
-export function getRole(roleName: string | undefined): Role | null {
-  return normalizeRole(roleName)
+function roleCodeToLegacyRole(role: RoleCode | null): Role | null {
+  if (!role) return null
+  if (role === 'platform_admin' || role === 'org_admin') return 'admin'
+  if (role === 'org_accountant') return 'accountant'
+  if (role === 'manager') return 'manager'
+  if (role === 'engineer') return 'engineer'
+  return null
 }
 
-const ADMIN_PATHS = [
-  '/', '/org', '/details', '/list',
-  '/sessions', '/reports', '/support',
-  '/map', '/partner-users', '/grants', '/audit-log',
-]
-/** Operator: A. Monitor, B. Organizations, C. Operation, D. Support (Maintenance), Settings. No D. Reports. */
-const OPERATOR_PATHS = [
-  '/', '/map', '/org', '/details', '/list', '/sessions', '/support',
-]
-/** Engineer: Dashboard, Map, Organization, Details, List, Monitor, Maintenance. No Reports, Users, Audit Log, Settings. */
-const ENGINEER_PATHS = ['/', '/map', '/org', '/details', '/list', '/sessions', '/support']
-/** Manager: same as Engineer – Dashboard, Map, Org, Details, List, Monitor, Support. */
-const MANAGER_PATHS = ['/', '/map', '/org', '/details', '/list', '/sessions', '/support']
-/** Organization Accountant: Organization, List, Reports only (no Dashboard / A. Monitor). */
-const ACCOUNTANT_PATHS = ['/org', '/list', '/reports']
-/** Viewer: read-focused default (includes Dashboard). */
-const VIEWER_PATHS = ['/', '/org', '/list', '/reports']
-
-/** Default landing route when Organization Accountant cannot use "/". */
-export const ACCOUNTANT_HOME_PATH = '/org'
+export function getRole(
+  roleCode?: string | null,
+  roleName?: string | null,
+): Role | null {
+  return roleCodeToLegacyRole(normalizeRoleCode(roleCode, roleName)) ?? normalizeRole(roleName ?? undefined)
+}
 
 export function canAccessPath(
+  roleCode: string | undefined | null,
   roleName: string | undefined,
   path: string,
   permissions?: PermissionMap,
@@ -123,94 +110,18 @@ export function canAccessPath(
     // Backend has provisioned this code → enforce strictly.
     return hasPermission(permissions, rule.code, rule.access)
   }
-  // Permission code not yet provisioned on backend — fall back to role whitelist.
+  // Permission code not yet provisioned on backend — fall back to role_code sidebar config.
   // TODO(rbac): remove this fallback once all codes in ROUTE_PERMISSIONS exist in
   // ocpp_CSGO.Permissions and are assigned in Role_Permissions.
 
-  const role = normalizeRole(roleName)
-  if (!role) return false
-  if (role === 'accountant') return ACCOUNTANT_PATHS.includes(p)
-  if (role === 'viewer') return VIEWER_PATHS.includes(p)
-  if (role === 'engineer') return ENGINEER_PATHS.includes(p)
-  if (role === 'manager') return MANAGER_PATHS.includes(p)
-  if (role === 'operator') return OPERATOR_PATHS.includes(p)
-  if (role === 'admin') return ADMIN_PATHS.includes(p) && p !== '/billing'
-  return false
+  return isPathAllowedForRole(roleCode, roleName, p)
 }
 
-/** Nav items with optional group (section label). Order: A → B → C → D → E. */
-function adminNav(): NavItem[] {
-  return [
-    { to: '/', label: 'Dashboard', labelKey: 'nav.dashboard', icon: Home, group: 'Monitor', groupKey: 'group.monitor' },
-    { to: '/map', label: 'Map View', labelKey: 'nav.mapView', icon: Map, group: 'Monitor', groupKey: 'group.monitor' },
-    { to: '/org', label: 'Organization', labelKey: 'nav.organization', icon: Building2, group: 'Organizations', groupKey: 'group.organizations' },
-    { to: '/details', label: 'Location, Charger, Connector, Tariffs', labelKey: 'nav.details', icon: List, group: 'Organizations', groupKey: 'group.organizations' },
-    { to: '/list', label: 'List of Location, Charger, Connector, Tariffs', labelKey: 'nav.list', icon: Table, group: 'Organizations', groupKey: 'group.organizations' },
-    { to: '/partner-users', label: 'Users of Organization', labelKey: 'nav.partnerUsers', icon: Users, group: 'Organizations', groupKey: 'group.organizations' },
-    { to: '/grants', label: 'Resource Grants', labelKey: 'nav.grants', icon: Share2, group: 'Organizations', groupKey: 'group.organizations' },
-    { to: '/sessions', label: 'Monitor', labelKey: 'nav.monitor', icon: Activity, group: 'Operation', groupKey: 'group.operation' },
-    { to: '/reports', label: 'Reports & Analytics', labelKey: 'nav.reports', icon: FileText, group: 'Reports', groupKey: 'group.reports' },
-    { to: '/audit-log', label: 'Audit Log', labelKey: 'nav.auditLog', icon: ScrollText, group: 'Reports', groupKey: 'group.reports' },
-    { to: '/support', label: 'Maintenance Tickets', labelKey: 'nav.maintenanceTickets', icon: Wrench, group: 'Support', groupKey: 'group.support', end: true },
-  ]
-}
-
-/** Operator: A. Monitor (Dashboard, Map) | B. Organizations (Org, Details, List) | C. Operation (Monitor) | D. Support (Maintenance Tickets) | Settings. No D. Reports. */
-function operatorNav(): NavItem[] {
-  return [
-    { to: '/', label: 'Dashboard', labelKey: 'nav.dashboard', icon: Home, group: 'Monitor', groupKey: 'group.monitor' },
-    { to: '/map', label: 'Map View', labelKey: 'nav.mapView', icon: Map, group: 'Monitor', groupKey: 'group.monitor' },
-    { to: '/org', label: 'Organization', labelKey: 'nav.organization', icon: Building2, group: 'Organizations', groupKey: 'group.organizations' },
-    { to: '/details', label: 'Location, Charger, Connector, Tariffs', labelKey: 'nav.details', icon: List, group: 'Organizations', groupKey: 'group.organizations' },
-    { to: '/list', label: 'List of Location, Charger, Connector, Tariffs', labelKey: 'nav.list', icon: Table, group: 'Organizations', groupKey: 'group.organizations' },
-    { to: '/sessions', label: 'Monitor', labelKey: 'nav.monitor', icon: Activity, group: 'Operation', groupKey: 'group.operation' },
-    { to: '/support', label: 'Maintenance Tickets', labelKey: 'nav.maintenanceTickets', icon: Wrench, group: 'Support', groupKey: 'group.support', end: true },
-  ]
-}
-
-/** Engineer: Dashboard, Map, Organization, Details, List, Monitor, Maintenance. No Reports, Users, Predictive AI, Audit Log, Settings. */
-function engineerNav(): NavItem[] {
-  return [
-    { to: '/', label: 'Dashboard', labelKey: 'nav.dashboard', icon: Home, group: 'Monitor', groupKey: 'group.monitor' },
-    { to: '/map', label: 'Map View', labelKey: 'nav.mapView', icon: Map, group: 'Monitor', groupKey: 'group.monitor' },
-    { to: '/org', label: 'Organization', labelKey: 'nav.organization', icon: Building2, group: 'Organizations', groupKey: 'group.organizations' },
-    { to: '/details', label: 'Location, Charger, Connector, Tariffs', labelKey: 'nav.details', icon: List, group: 'Organizations', groupKey: 'group.organizations' },
-    { to: '/list', label: 'List of Location, Charger, Connector, Tariffs', labelKey: 'nav.list', icon: Table, group: 'Organizations', groupKey: 'group.organizations' },
-    { to: '/sessions', label: 'Monitor', labelKey: 'nav.monitor', icon: Activity, group: 'Operation', groupKey: 'group.operation' },
-    { to: '/support', label: 'Maintenance Tickets', labelKey: 'nav.maintenanceTickets', icon: Wrench, group: 'Support', groupKey: 'group.support', end: true },
-  ]
-}
-
-/** Manager: same as Engineer – A. Monitor, B. Organizations, C. Operation, E. Support. No D. Reports, Users, Audit Log, Settings. */
-function managerNav(): NavItem[] {
-  return [
-    { to: '/', label: 'Dashboard', labelKey: 'nav.dashboard', icon: Home, group: 'Monitor', groupKey: 'group.monitor' },
-    { to: '/map', label: 'Map View', labelKey: 'nav.mapView', icon: Map, group: 'Monitor', groupKey: 'group.monitor' },
-    { to: '/org', label: 'Organization', labelKey: 'nav.organization', icon: Building2, group: 'Organizations', groupKey: 'group.organizations' },
-    { to: '/details', label: 'Location, Charger, Connector, Tariffs', labelKey: 'nav.details', icon: List, group: 'Organizations', groupKey: 'group.organizations' },
-    { to: '/list', label: 'List of Location, Charger, Connector, Tariffs', labelKey: 'nav.list', icon: Table, group: 'Organizations', groupKey: 'group.organizations' },
-    { to: '/sessions', label: 'Monitor', labelKey: 'nav.monitor', icon: Activity, group: 'Operation', groupKey: 'group.operation' },
-    { to: '/support', label: 'Maintenance Tickets', labelKey: 'nav.maintenanceTickets', icon: Wrench, group: 'Support', groupKey: 'group.support', end: true },
-  ]
-}
-
-/** Organization Accountant: B. Organizations + D. Reports (no A. Monitor / Dashboard). */
-function accountantNav(): NavItem[] {
-  return [
-    { to: '/org', label: 'Organization', labelKey: 'nav.organization', icon: Building2, group: 'Organizations', groupKey: 'group.organizations' },
-    { to: '/list', label: 'List of Location, Charger, Connector, Tariffs', labelKey: 'nav.list', icon: Table, group: 'Organizations', groupKey: 'group.organizations' },
-    { to: '/reports', label: 'Reports & Analytics', labelKey: 'nav.reports', icon: FileText, group: 'Reports', groupKey: 'group.reports' },
-  ]
-}
-
-export function getNavItems(roleName: string | undefined): NavItem[] {
-  const role = normalizeRole(roleName)
-  if (role === 'accountant' || role === 'viewer') return accountantNav()
-  if (role === 'engineer') return engineerNav()
-  if (role === 'manager') return managerNav()
-  if (role === 'operator') return operatorNav()
-  if (role === 'admin') return adminNav()
-  return adminNav()
+export function getNavItems(
+  roleCode?: string | null,
+  roleName?: string | null,
+): NavItem[] {
+  return getSidebarNavItems(roleCode, roleName)
 }
 
 export function canManageLocations(roleName: string | undefined): boolean {
@@ -241,10 +152,15 @@ export function canManagePartnerUsers(roleName: string | undefined): boolean {
   return normalizeRole(roleName) === 'admin'
 }
 
-/** Audit Log: admin and accountant see it in sidebar; operator (blocked at login) would have org-scoped access. Engineer/Manager do not see Audit Log. */
-export function canAccessAuditLog(roleName: string | undefined): boolean {
+/** Audit Log visibility (sidebar + page). */
+export function canAccessAuditLog(
+  roleName: string | undefined,
+  roleCode?: string | null,
+): boolean {
+  const code = normalizeRoleCode(roleCode, roleName)
+  if (code === 'platform_admin' || code === 'org_admin' || code === 'engineer') return true
   const role = normalizeRole(roleName)
-  return role === 'admin' || role === 'accountant' || role === 'operator'
+  return role === 'admin' || role === 'operator'
 }
 
 /** Full audit log (all orgs); only admin sees all. Operator/Accountant see only their organization's logs via organization_id filter. */

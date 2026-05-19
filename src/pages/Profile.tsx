@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from '../context/LanguageContext'
 import { User, Mail, Phone, Shield } from 'lucide-react'
-import { updateProfile, me, getToken } from '../services/api'
+import { updateProfile, changePassword, me, getToken } from '../services/api'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input'
@@ -111,6 +111,92 @@ export default function Profile({ embedded }: ProfileProps) {
       email: user?.email ?? '',
       mobile: user?.mobile ?? '',
     })
+  }
+
+  const [passwordOpen, setPasswordOpen] = useState(false)
+  const [passwordSubmitting, setPasswordSubmitting] = useState(false)
+  const [passwordMessage, setPasswordMessage] = useState('')
+  const [passwordSuccess, setPasswordSuccess] = useState(false)
+  const [passwordForm, setPasswordForm] = useState({
+    current_password: '',
+    new_password: '',
+    confirm_new_password: '',
+  })
+
+  const resetPasswordForm = () => ({
+    current_password: '',
+    new_password: '',
+    confirm_new_password: '',
+  })
+
+  const openPassword = () => {
+    setPasswordForm(resetPasswordForm())
+    setPasswordMessage('')
+    setPasswordSuccess(false)
+    setPasswordOpen(true)
+  }
+
+  const cancelPassword = () => {
+    setPasswordOpen(false)
+    setPasswordMessage('')
+    setPasswordSuccess(false)
+    setPasswordForm(resetPasswordForm())
+  }
+
+  const handlePasswordSave = (e: React.FormEvent) => {
+    e.preventDefault()
+    const { current_password, new_password, confirm_new_password } = passwordForm
+    if (!current_password.trim() || !new_password.trim() || !confirm_new_password.trim()) {
+      setPasswordSuccess(false)
+      setPasswordMessage(t('profile.passwordFieldsRequired'))
+      return
+    }
+    if (new_password.length < 8) {
+      setPasswordSuccess(false)
+      setPasswordMessage(t('profile.passwordMinLength'))
+      return
+    }
+    if (new_password !== confirm_new_password) {
+      setPasswordSuccess(false)
+      setPasswordMessage(t('profile.passwordMismatch'))
+      return
+    }
+    if (!getToken()) {
+      setPasswordSuccess(false)
+      setPasswordMessage(t('profile.sessionExpired'))
+      return
+    }
+    setPasswordSubmitting(true)
+    setPasswordMessage('')
+    changePassword({
+      current_password: current_password.trim(),
+      new_password: new_password.trim(),
+    })
+      .then((r) => {
+        if (r.success) {
+          setPasswordOpen(false)
+          setPasswordForm(resetPasswordForm())
+          setPasswordSuccess(true)
+          setPasswordMessage(r.message || t('profile.passwordChangeSuccess'))
+          return
+        }
+        setPasswordSuccess(false)
+        const err = r as { message?: string; details?: string; error?: string }
+        const text = err.details || err.error || err.message || t('profile.passwordChangeFailed')
+        const isExpired = /expired|TokenExpiredError|jwt expired/i.test(text)
+        if (isExpired) {
+          setPasswordMessage(t('profile.sessionExpired'))
+          logout()
+          navigate('/login')
+          return
+        }
+        setPasswordMessage(text)
+      })
+      .catch(() => {
+        setPasswordSuccess(false)
+        setPasswordMessage(t('profile.requestFailed'))
+      })
+      .finally(() => setPasswordSubmitting(false))
   }
 
   return (
@@ -253,6 +339,72 @@ export default function Profile({ embedded }: ProfileProps) {
                 </Button>
               </div>
             </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border border-border">
+        <CardHeader>
+          <CardTitle className="text-xl">{t('profile.changePassword')}</CardTitle>
+          <p className="text-sm text-muted-foreground mt-0.5">{t('profile.changePasswordSubtitle')}</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {passwordMessage && !passwordOpen && (
+            <p className={`text-sm ${passwordSuccess ? 'text-green-600 dark:text-green-500' : 'text-destructive'}`}>
+              {passwordMessage}
+            </p>
+          )}
+          {passwordOpen ? (
+            <form onSubmit={handlePasswordSave} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="profile-current-password">{t('profile.currentPassword')}</Label>
+                <Input
+                  id="profile-current-password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={passwordForm.current_password}
+                  onChange={(e) => setPasswordForm((f) => ({ ...f, current_password: e.target.value }))}
+                  className="bg-muted/50"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="profile-new-password">{t('profile.newPassword')}</Label>
+                <Input
+                  id="profile-new-password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={passwordForm.new_password}
+                  onChange={(e) => setPasswordForm((f) => ({ ...f, new_password: e.target.value }))}
+                  className="bg-muted/50"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="profile-confirm-password">{t('profile.confirmNewPassword')}</Label>
+                <Input
+                  id="profile-confirm-password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={passwordForm.confirm_new_password}
+                  onChange={(e) => setPasswordForm((f) => ({ ...f, confirm_new_password: e.target.value }))}
+                  className="bg-muted/50"
+                />
+              </div>
+              {passwordMessage && (
+                <p className="text-sm text-destructive">{passwordMessage}</p>
+              )}
+              <div className="flex gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={cancelPassword} disabled={passwordSubmitting}>
+                  {t('users.cancel')}
+                </Button>
+                <Button type="submit" disabled={passwordSubmitting}>
+                  {passwordSubmitting ? t('settings.saving') : t('users.save')}
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <Button type="button" variant="outline" onClick={openPassword}>
+              {t('profile.changePassword')}
+            </Button>
           )}
         </CardContent>
       </Card>

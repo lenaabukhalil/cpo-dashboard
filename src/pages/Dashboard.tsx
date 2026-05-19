@@ -23,7 +23,7 @@ import {
   BarChart3,
   ExternalLink,
   Wrench,
-  MapPin,
+  List,
 } from 'lucide-react'
 
 export default function Dashboard() {
@@ -147,9 +147,9 @@ export default function Dashboard() {
         <h2 id="quick-actions-heading" className="text-base font-semibold text-foreground mb-4">
           {t('dashboard.quickActions')}
         </h2>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <ActionCard to="/sessions" icon={<Activity />} title={t('nav.monitor')} />
-          <ActionCard to="/details" icon={<MapPin />} title={t('nav.details')} />
+          <ActionCard to="/details" icon={<List />} title={t('nav.details')} />
           <ActionCard to="/support" icon={<Wrench />} title={t('dashboard.support')} />
         </div>
       </section>

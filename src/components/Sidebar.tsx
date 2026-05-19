@@ -38,8 +38,8 @@ export default function Sidebar({ open: _open = true, onOpenChange, side = 'left
   const title = shortRoleTitle(user?.role_name || 'Admin')
   const subtitle = `Hello, ${fullName || roleName}`
 
-  const nav = getNavItems(user?.role_name).filter((it) =>
-    canAccessPath(user?.role_name, it.to, permissions),
+  const nav = getNavItems(user?.role_code, user?.role_name).filter((it) =>
+    canAccessPath(user?.role_code, user?.role_name, it.to, permissions),
   )
   const groups = Array.from(
     nav.reduce((m, it) => {
@@ -156,11 +156,13 @@ export default function Sidebar({ open: _open = true, onOpenChange, side = 'left
         </div>
 
         <div className="flex-1 min-h-0 overflow-auto px-2 pb-3">
-          {groups.map(([groupLabel, items]) => (
+          {groups.map(([groupLabel, items]) => {
+            const sectionTitle = items[0]?.groupKey ? t(items[0].groupKey) : groupLabel
+            return (
             <div key={groupLabel || 'root'} className="mt-3 first:mt-0">
               {groupLabel ? (
                 <div className="px-3 py-1 text-xs font-semibold tracking-wide text-gray-700">
-                  {groupLabel}
+                  {sectionTitle}
                 </div>
               ) : null}
 
@@ -192,7 +194,8 @@ export default function Sidebar({ open: _open = true, onOpenChange, side = 'left
                 })}
               </div>
             </div>
-          ))}
+            )
+          })}
         </div>
 
         <div className="mt-auto border-t border-gray-200 pt-4 mt-4 px-4 pb-5">

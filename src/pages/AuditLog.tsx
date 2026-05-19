@@ -134,7 +134,7 @@ function AuditActionBadge({ action, t }: { action: string; t: (k: string) => str
 export default function AuditLog() {
   const { user, logout } = useAuth()
   const { t } = useTranslation()
-  const canAccess = canAccessAuditLog(user?.role_name)
+  const canAccess = canAccessAuditLog(user?.role_name, user?.role_code)
   const defaultFrom = ''
   const defaultTo = ''
 

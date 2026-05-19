@@ -1,20 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Activity, DollarSign, Zap } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
 import { AppMultiSelect } from '../../components/shared/AppMultiSelect'
 import { SessionsReportDateTimeField } from '../../components/SessionsReportDateTimeField'
-import { KpiCard } from '../../components/financial/KpiCard'
 import { BillsTable, exportBillsCsv, sortBillsRows, type BillsSortKey } from '../../components/financial/BillsTable'
 import {
   getFinancialBills,
-  getFinancialSummary,
-  normalizeFinancialSummary,
   type FinancialBillRow,
   type FinancialReportQueryParams,
-  type FinancialSummaryData,
 } from '../../api/financial'
 import { getChargers, getConnectors, getLocations, type Charger, type Connector, type Location } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
@@ -26,21 +21,6 @@ import {
   validateSessionsDatetimeRange,
   type SessionsRangeValidationError,
 } from '../../lib/sessionsReportRange'
-
-function fmtMoney(n: number) {
-  if (!Number.isFinite(n)) return '—'
-  return `${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} JOD`
-}
-
-function fmtKwh(n: number) {
-  if (!Number.isFinite(n)) return '—'
-  return `${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kWh`
-}
-
-function fmtInt(n: number) {
-  if (!Number.isFinite(n)) return '—'
-  return n.toLocaleString()
-}
 
 function financialRangeValidationMessage(code: SessionsRangeValidationError, t: (key: string) => string): string {
   switch (code) {
@@ -77,7 +57,6 @@ export default function FinancialReport() {
   const [connectorsForFilter, setConnectorsForFilter] = useState<Connector[]>([])
 
   const [hasApplied, setHasApplied] = useState(false)
-  const [summary, setSummary] = useState<FinancialSummaryData | null>(null)
   const [bills, setBills] = useState<FinancialBillRow[]>([])
   const [billsCount, setBillsCount] = useState(0)
 
@@ -196,11 +175,7 @@ export default function FinancialReport() {
     setMainLoading(true)
     setPage(1)
     try {
-      const [sRes, bRes] = await Promise.all([getFinancialSummary(params), getFinancialBills(params)])
-
-      if (!sRes.success) throw new Error(sRes.message || t('reports.financial.loadFailed'))
-      const sData = normalizeFinancialSummary((sRes as { data?: unknown }).data)
-      setSummary(sData)
+      const bRes = await getFinancialBills(params)
 
       const bData = (bRes as { data?: FinancialBillRow[] }).data
       const list = Array.isArray(bData) ? bData : []
@@ -211,7 +186,6 @@ export default function FinancialReport() {
       setHasApplied(true)
     } catch (e) {
       setFilterError((e as Error)?.message || t('reports.financial.loadFailed'))
-      setSummary(null)
       setBills([])
       setBillsCount(0)
       setHasApplied(false)
@@ -229,7 +203,6 @@ export default function FinancialReport() {
     setEnergyMax('')
     setDateOrder('desc')
     setPage(1)
-    setSummary(null)
     setBills([])
     setBillsCount(0)
     setHasApplied(false)
@@ -417,42 +390,9 @@ export default function FinancialReport() {
         <p className="text-sm text-muted-foreground">{t('reports.financial.hintApply')}</p>
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {summary ? (
-              <>
-                <KpiCard
-                  title={t('reports.financial.kpi.revenue')}
-                  valueDisplay={fmtMoney(summary.total_revenue)}
-                  icon={DollarSign}
-                />
-                <KpiCard
-                  title={t('reports.financial.kpi.energy')}
-                  valueDisplay={fmtKwh(summary.total_energy)}
-                  icon={Zap}
-                />
-                <KpiCard
-                  title={t('reports.financial.kpi.sessions')}
-                  valueDisplay={fmtInt(summary.total_sessions)}
-                  icon={Activity}
-                />
-                <KpiCard
-                  title={t('reports.financial.kpi.avgAmount')}
-                  valueDisplay={fmtMoney(summary.avg_revenue_per_session)}
-                />
-                <KpiCard
-                  title={t('reports.financial.kpi.avgEnergy')}
-                  valueDisplay={fmtKwh(summary.avg_energy_per_session)}
-                />
-                <KpiCard
-                  title={t('reports.financial.kpi.discount')}
-                  valueDisplay={fmtMoney(summary.total_discount)}
-                />
-              </>
-            ) : mainLoading ? (
-              <p className="text-sm text-muted-foreground col-span-full py-4">{t('reports.loading')}</p>
-            ) : null}
-          </div>
-
+          {mainLoading ? (
+            <p className="text-sm text-muted-foreground py-4">{t('reports.loading')}</p>
+          ) : null}
           <BillsTable
             bills={bills}
             apiTotalCount={billsCount}

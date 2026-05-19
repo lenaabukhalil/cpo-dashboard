@@ -157,10 +157,18 @@ export async function updateProfile(body: { f_name?: string; l_name?: string; em
   })
 }
 
+export async function changePassword(body: { current_password: string; new_password: string }) {
+  return request<{ message?: string }>('/api/v4/auth/password', {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
 export interface AuthUser {
   user_id: number
   organization_id: number
   mobile: string
+  role_code?: string | null
   role_name: string
   f_name: string
   l_name: string
@@ -200,15 +208,30 @@ export interface PartnerUser {
 
 export async function getPartnerUsers(
   organizationId: number,
-  params?: { q?: string; limit?: number; offset?: number; is_active?: boolean; skipCache?: boolean }
+  params?: {
+    q?: string
+    limit?: number
+    offset?: number
+    status?: string
+    is_active?: boolean
+    skipCache?: boolean
+  },
 ) {
   const p: Record<string, string> = { organization_id: String(organizationId) }
   if (params?.q) p.q = params.q
   if (params?.limit != null) p.limit = String(params.limit)
   if (params?.offset != null) p.offset = String(params.offset)
+  if (params?.status) p.status = params.status
   if (params?.is_active !== undefined) p.is_active = params.is_active ? '1' : '0'
   const skipCache = params?.skipCache === true
-  return request<{ data: PartnerUser[] }>('/api/v4/users/partner', { params: p, skipCache })
+  return request<{ count?: number; data: PartnerUser[] }>('/api/v4/users/partner', { params: p, skipCache })
+}
+
+export async function getPartnerUser(id: number) {
+  return request<{ data: PartnerUser }>('/api/v4/users/partner', {
+    params: { id: String(id) },
+    skipCache: true,
+  })
 }
 
 export interface RbacRole {
@@ -259,6 +282,31 @@ export async function createPartnerUser(body: {
   })
 }
 
+export type RfidCardType = 'employee' | 'customer' | 'fleet' | 'vip' | 'test' | 'other'
+export type RfidStatus = 'active' | 'disabled' | 'suspended' | 'pending'
+
+export interface RfidUser {
+  id: number
+  rfid_uid: string
+  first_name: string
+  last_name: string
+  organization_id: number
+  country_code?: number | null
+  mobile?: number | string | null
+  email?: string | null
+  status: RfidStatus
+  card_type: RfidCardType
+  allowed_locations?: number[] | null
+  allowed_location_names?: string[] | null
+  notes?: string | null
+  disabled_at?: string | null
+  disabled_reason?: string | null
+  sessions_count?: number | null
+  total_kwh?: number | null
+  total_amount?: number | null
+  last_session_at?: string | null
+}
+
 export interface RfidUserCreatePayload {
   rfid_uid: string
   first_name: string
@@ -266,10 +314,64 @@ export interface RfidUserCreatePayload {
   country_code?: number | null
   mobile?: number | null
   email?: string | null
-  card_type?: 'employee' | 'customer' | 'fleet' | 'vip' | 'test' | 'other'
-  status?: 'active' | 'disabled' | 'suspended' | 'pending'
+  card_type?: RfidCardType
+  status?: RfidStatus
   allowed_locations?: number[] | null
   notes?: string | null
+}
+
+export type RfidUserUpdatePayload = Partial<RfidUserCreatePayload>
+
+export async function getRfidUsers(
+  organizationId: number,
+  params?: { q?: string; status?: string; card_type?: string; skipCache?: boolean },
+) {
+  const p: Record<string, string> = { organization_id: String(organizationId) }
+  if (params?.q?.trim()) p.q = params.q.trim()
+  if (params?.status && params.status !== 'all') p.status = params.status
+  if (params?.card_type && params.card_type !== 'all') p.card_type = params.card_type
+  return request<{ count?: number; data: RfidUser[] }>('/api/v4/rfid-users', {
+    params: p,
+    skipCache: params?.skipCache === true,
+  })
+}
+
+export async function getRfidUser(id: number) {
+  return request<{ data: RfidUser }>('/api/v4/rfid-users', {
+    params: { id: String(id) },
+    skipCache: true,
+  })
+}
+
+export async function updateRfidUser(id: number, body: RfidUserUpdatePayload) {
+  const res = await request<{ success?: boolean; message?: string }>('/api/v4/rfid-user', {
+    method: 'PUT',
+    params: { id: String(id) },
+    body: JSON.stringify(body),
+  })
+  return {
+    success: res.success === true,
+    message: res.message,
+    statusCode: res.statusCode,
+  }
+}
+
+export async function deleteRfidUser(id: number) {
+  return request<{ success: boolean; message?: string }>('/api/v4/rfid-user', {
+    method: 'DELETE',
+    params: { id: String(id) },
+  })
+}
+
+export async function setRfidUserEnabled(
+  id: number,
+  body: { enabled: boolean; reason?: string },
+) {
+  return request<{ success: boolean; message?: string }>('/api/v4/rfid-user/enable', {
+    method: 'PUT',
+    params: { id: String(id) },
+    body: JSON.stringify(body),
+  })
 }
 
 /** POST /api/v4/rfid-user — create RFID card for an organization. */
@@ -366,6 +468,7 @@ export async function revokeGrant(id: number) {
 }
 
 export interface Org {
+  id: number
   organization_id: number
   name: string
   name_ar?: string
