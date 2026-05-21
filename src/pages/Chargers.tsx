@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { ChevronDown } from 'lucide-react'
-import { useAuth } from '../context/AuthContext'
+import { useAccessibleOrgs, getLocationsBizId } from '../hooks/useAccessibleOrgs'
 import { getLocations } from '../services/api'
 import {
   getChargers,
@@ -47,8 +47,8 @@ function getChargerTimeRaw(c: ChargerType): string | number | null | undefined {
 }
 
 export default function Chargers() {
-  const { user } = useAuth()
-  const orgId = user?.organization_id ?? null
+  const { selectedOrg, ownOrg, loading: orgsLoading } = useAccessibleOrgs()
+  const bizId = getLocationsBizId(selectedOrg, ownOrg) ?? null
 
   const [locations, setLocations] = useState<{ location_id: number; name: string }[]>([])
   const [allChargers, setAllChargers] = useState<ChargerType[]>([])
@@ -59,7 +59,7 @@ export default function Chargers() {
   const [submitting, setSubmitting] = useState(false)
 
   // Form state: cascading Organization → Location → Charger
-  const [_selectedOrgId, setSelectedOrgId] = useState<number | ''>(orgId ?? '')
+  const [_selectedOrgId, setSelectedOrgId] = useState<number | ''>(bizId ?? '')
   const [selectedLocationId, setSelectedLocationId] = useState<number | ''>('')
   const [selectedChargerId, setSelectedChargerId] = useState<number | '' | 'new'>('new')
   const [chargersInLocation, setChargersInLocation] = useState<ChargerType[]>([])
@@ -76,18 +76,18 @@ export default function Chargers() {
   const [statusOfflineSearch, setStatusOfflineSearch] = useState('')
 
   useEffect(() => {
-    if (orgId == null) return
+    if (orgsLoading || bizId == null) return
     setLoadingLocations(true)
-    getLocations(orgId)
+    getLocations(bizId)
       .then((r) => {
         if (r.success && r.data) setLocations(Array.isArray(r.data) ? r.data : [])
       })
       .finally(() => setLoadingLocations(false))
-  }, [orgId])
+  }, [bizId, orgsLoading, selectedOrg?.id])
 
   useEffect(() => {
-    if (orgId != null) setSelectedOrgId(orgId)
-  }, [orgId])
+    if (bizId != null) setSelectedOrgId(bizId)
+  }, [bizId])
 
   // Load chargers for selected location (Chargers tab)
   useEffect(() => {
@@ -132,7 +132,7 @@ export default function Chargers() {
         type: 'AC',
         status: 'offline',
         location_id: Number(selectedLocationId),
-        ...(orgId != null && { organization_id: orgId }),
+        ...(bizId != null && { organization_id: bizId }),
       })
       return
     }
@@ -146,10 +146,10 @@ export default function Chargers() {
         num_connectors: c.num_connectors,
         max_session_time: c.max_session_time,
         description: c.description,
-        ...(orgId != null && { organization_id: orgId }),
+        ...(bizId != null && { organization_id: bizId }),
       })
     }
-  }, [selectedChargerId, selectedLocationId, chargersInLocation, orgId])
+  }, [selectedChargerId, selectedLocationId, chargersInLocation, bizId])
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -165,12 +165,12 @@ export default function Chargers() {
         if (listRes.success && listRes.data) setChargersInLocation(Array.isArray(listRes.data) ? listRes.data : [])
       } else setMessage(res.message || 'Update failed')
     } else {
-      const res = await createCharger({ ...form, organization_id: orgId ?? undefined })
+      const res = await createCharger({ ...form, organization_id: bizId ?? undefined })
       setSubmitting(false)
       if (res.success) {
         setMessage('Charger created.')
         setSelectedChargerId('new')
-        setForm({ name: '', type: 'AC', status: 'offline', location_id: form.location_id, organization_id: orgId ?? undefined })
+        setForm({ name: '', type: 'AC', status: 'offline', location_id: form.location_id, organization_id: bizId ?? undefined })
         const listRes = await getChargers(Number(selectedLocationId))
         if (listRes.success && listRes.data) setChargersInLocation(Array.isArray(listRes.data) ? listRes.data : [])
       } else setMessage(res.message || 'Create failed')
@@ -188,7 +188,7 @@ export default function Chargers() {
         num_connectors: currentCharger.num_connectors,
         max_session_time: currentCharger.max_session_time,
         description: currentCharger.description,
-        ...(orgId != null && { organization_id: orgId }),
+        ...(bizId != null && { organization_id: bizId }),
       })
     } else {
       setForm({
@@ -196,7 +196,7 @@ export default function Chargers() {
         type: 'AC',
         status: 'offline',
         location_id: Number(selectedLocationId) || 0,
-        ...(orgId != null && { organization_id: orgId }),
+        ...(bizId != null && { organization_id: bizId }),
       })
     }
   }
@@ -227,7 +227,10 @@ export default function Chargers() {
     return base.filter((c) => c.name.toLowerCase().includes(q) || (c.chargerID || '').toLowerCase().includes(q))
   }, [allChargers, statusOfflineSearch])
 
-  if (orgId == null) {
+  if (orgsLoading) {
+    return <div className="space-y-6"><p className="text-muted-foreground">Loading...</p></div>
+  }
+  if (bizId == null) {
     return (
       <div className="space-y-6">
         <p className="text-destructive">No organization assigned.</p>
@@ -344,7 +347,7 @@ export default function Chargers() {
                 <div className="space-y-2">
                   <Label>Organization</Label>
                   <div className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground cursor-default pointer-events-none">
-                    <span>{orgId != null ? `Organization ${orgId}` : '—'}</span>
+                    <span>{bizId != null ? `Organization ${bizId}` : '—'}</span>
                     <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" aria-hidden />
                   </div>
                 </div>

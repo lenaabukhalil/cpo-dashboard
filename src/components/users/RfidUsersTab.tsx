@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CreditCard, Pencil, Plus, Search } from 'lucide-react'
+import { BookOpen, CreditCard, Pencil, Plus, Search } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
@@ -7,11 +7,14 @@ import { Switch } from '../ui/switch'
 import { EmptyState } from '../EmptyState'
 import { AppSelect } from '../shared/AppSelect'
 import { cn } from '../../lib/utils'
-import { useAuth } from '../../context/AuthContext'
+import { getLocationsBizId } from '../../hooks/useAccessibleOrgs'
+import type { AccessibleOrg } from '../../types/org'
 import { useTranslation } from '../../context/LanguageContext'
 import { useToast } from '../../contexts/ToastContext'
 import { hasWritePermission } from '../../lib/permissions'
+import { useAuth } from '../../context/AuthContext'
 import {
+  clearGetCache,
   deleteRfidUser,
   getRfidUsers,
   setRfidUserEnabled,
@@ -57,12 +60,37 @@ function TableSkeleton({ cols }: { cols: number }) {
   )
 }
 
-export function RfidUsersTab() {
-  const { user, permissions } = useAuth()
+export type RfidUsersTabProps = {
+  orgsLoading: boolean
+  selectedOrgPK: number | null
+  selectedOrg: AccessibleOrg | null
+  orgs: AccessibleOrg[]
+  ownOrg: AccessibleOrg | null
+}
+
+export function RfidUsersTab({
+  orgsLoading,
+  selectedOrgPK,
+  selectedOrg,
+  orgs,
+  ownOrg,
+}: RfidUsersTabProps) {
+  const { permissions } = useAuth()
   const { t } = useTranslation()
   const { pushToast } = useToast()
+  const isReadOnly = selectedOrg?.access_type === 'grant'
   const canEdit = hasWritePermission(permissions, 'rfid.edit')
-  const orgId = user?.organization_id
+  const showWriteUi = !isReadOnly && canEdit
+  const showActionsColumn = showWriteUi || isReadOnly
+
+  const activeOrg = useMemo((): AccessibleOrg | null => {
+    if (orgs.length === 0) return null
+    if (selectedOrgPK == null) return ownOrg
+    return orgs.find((o) => o.id === selectedOrgPK) ?? ownOrg
+  }, [orgs, selectedOrgPK, ownOrg])
+
+  const activeOrgPK = activeOrg?.id ?? null
+  const locationsBizId = getLocationsBizId(activeOrg, ownOrg)
 
   const [list, setList] = useState<RfidUser[]>([])
   const [loading, setLoading] = useState(true)
@@ -83,9 +111,9 @@ export function RfidUsersTab() {
 
   const loadList = useCallback(
     (silent = false) => {
-      if (orgId == null) return
+      if (orgsLoading || activeOrgPK == null) return
       if (!silent) setLoading(true)
-      getRfidUsers(orgId, {
+      getRfidUsers(activeOrgPK, {
         q: searchDebounced || undefined,
         status: statusFilter,
         skipCache: true,
@@ -99,12 +127,38 @@ export function RfidUsersTab() {
           if (!silent) setLoading(false)
         })
     },
-    [orgId, searchDebounced, statusFilter],
+    [orgsLoading, activeOrgPK, searchDebounced, statusFilter],
   )
 
   useEffect(() => {
-    loadList()
-  }, [loadList])
+    if (orgsLoading || activeOrgPK == null) return
+
+    clearGetCache()
+
+    let cancelled = false
+    setLoading(true)
+
+    getRfidUsers(activeOrgPK, {
+      q: searchDebounced || undefined,
+      status: statusFilter,
+      skipCache: true,
+    })
+      .then((res) => {
+        if (cancelled) return
+        const data = (res as { data?: RfidUser[] }).data
+        setList(Array.isArray(data) ? data : [])
+      })
+      .catch(() => {
+        if (!cancelled) setList([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [orgsLoading, selectedOrgPK, activeOrgPK, searchDebounced, statusFilter])
 
   const statusOptions = useMemo(
     () => [
@@ -115,25 +169,27 @@ export function RfidUsersTab() {
   )
 
   const openCreate = () => {
+    if (isReadOnly) return
     setFormMode('create')
     setEditingUser(null)
     setFormOpen(true)
   }
 
   const openEdit = (u: RfidUser) => {
+    if (isReadOnly) return
     setFormMode('edit')
     setEditingUser(u)
     setFormOpen(true)
   }
 
   const handleToggleClick = (u: RfidUser) => {
-    if (!canEdit) return
+    if (isReadOnly || !canEdit) return
     setToggleUser(u)
     setToggleEnabling(u.status !== 'active')
   }
 
   const handleToggleConfirm = (reason?: string) => {
-    if (!toggleUser) return
+    if (isReadOnly || !toggleUser) return
     setToggleSubmitting(true)
     const enabling = toggleEnabling
     setRfidUserEnabled(toggleUser.id, { enabled: enabling, reason })
@@ -163,6 +219,7 @@ export function RfidUsersTab() {
   }
 
   const handleDelete = (u: RfidUser) => {
+    if (isReadOnly) return
     if (!confirm(t('rfid.deleteConfirm'))) return
     deleteRfidUser(u.id)
       .then((res) => {
@@ -176,7 +233,7 @@ export function RfidUsersTab() {
       .catch(() => pushToast(t('common.error'), t('users.requestFailed')))
   }
 
-  const colCount = canEdit ? 8 : 7
+  const colCount = showActionsColumn ? 8 : 7
 
   return (
     <>
@@ -187,7 +244,7 @@ export function RfidUsersTab() {
               <CardTitle className="text-base">{t('users.tabRfidTitle')}</CardTitle>
               <p className="text-sm text-muted-foreground mt-1">{t('users.tabRfidSubtitle')}</p>
             </div>
-            {canEdit ? (
+            {showWriteUi ? (
               <Button type="button" className="shrink-0 gap-2" onClick={openCreate}>
                 <Plus className="h-4 w-4" />
                 {t('users.addRfidUser')}
@@ -215,6 +272,14 @@ export function RfidUsersTab() {
           </div>
         </CardHeader>
         <CardContent>
+          {isReadOnly ? (
+            <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-200">
+              <p className="flex items-start gap-2">
+                <BookOpen className="h-4 w-4 shrink-0 mt-0.5" aria-hidden />
+                <span>{t('users.rfidGrantReadOnly')}</span>
+              </p>
+            </div>
+          ) : null}
           {loading ? (
             <div className="rounded-xl border border-border overflow-x-auto table-wrap">
               <table className="w-full text-sm border-collapse min-w-[900px]">
@@ -227,7 +292,9 @@ export function RfidUsersTab() {
                     <th className="text-end py-3 px-3 font-semibold">{t('rfid.sessions')}</th>
                     <th className="text-end py-3 px-3 font-semibold">{t('rfid.totalKwh')}</th>
                     <th className="text-end py-3 px-3 font-semibold">{t('rfid.totalAmount')}</th>
-                    {canEdit ? <th className="text-end py-3 px-3 font-semibold">{t('users.actions')}</th> : null}
+                    {showActionsColumn ? (
+                      <th className="text-end py-3 px-3 font-semibold">{t('users.actions')}</th>
+                    ) : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -240,8 +307,8 @@ export function RfidUsersTab() {
               title={t('rfid.emptyTitle')}
               description={t('rfid.emptyDescription')}
               icon={<CreditCard className="h-12 w-12" />}
-              actionLabel={canEdit ? t('users.addRfidUser') : undefined}
-              onAction={canEdit ? openCreate : undefined}
+              actionLabel={showWriteUi ? t('users.addRfidUser') : undefined}
+              onAction={showWriteUi ? openCreate : undefined}
             />
           ) : (
             <div className="rounded-xl border border-border overflow-x-auto table-wrap">
@@ -255,7 +322,9 @@ export function RfidUsersTab() {
                     <th className="text-end py-3 px-3 font-semibold">{t('rfid.sessions')}</th>
                     <th className="text-end py-3 px-3 font-semibold">{t('rfid.totalKwh')}</th>
                     <th className="text-end py-3 px-3 font-semibold">{t('rfid.totalAmount')}</th>
-                    {canEdit ? <th className="text-end py-3 px-3 font-semibold">{t('users.actions')}</th> : null}
+                    {showActionsColumn ? (
+                      <th className="text-end py-3 px-3 font-semibold">{t('users.actions')}</th>
+                    ) : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -284,30 +353,33 @@ export function RfidUsersTab() {
                         <td className="py-3 px-3 text-end tabular-nums">{formatStat(u.sessions_count)}</td>
                         <td className="py-3 px-3 text-end tabular-nums">{formatStat(u.total_kwh, 2)}</td>
                         <td className="py-3 px-3 text-end tabular-nums">{formatStat(u.total_amount, 2)}</td>
-                        {canEdit ? (
+                        {showActionsColumn ? (
                           <td className="py-3 px-3 text-end">
-                            <div className="flex items-center justify-end gap-2">
-                              <span title={toggleTitle} className="inline-flex items-center">
-                                <Switch
-                                  checked={isActive}
-                                  disabled={!canEdit}
-                                  onCheckedChange={() => handleToggleClick(u)}
-                                  aria-label={isActive ? t('rfid.disableAction') : t('rfid.enableAction')}
-                                />
-                              </span>
-                              <Button type="button" variant="ghost" size="sm" className="h-8" onClick={() => openEdit(u)}>
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 text-destructive hover:text-destructive"
-                                onClick={() => handleDelete(u)}
-                              >
-                                {t('support.remove')}
-                              </Button>
-                            </div>
+                            {isReadOnly ? (
+                              <span className="text-xs text-muted-foreground italic">{t('common.viewOnly')}</span>
+                            ) : showWriteUi ? (
+                              <div className="flex items-center justify-end gap-2">
+                                <span title={toggleTitle} className="inline-flex items-center">
+                                  <Switch
+                                    checked={isActive}
+                                    onCheckedChange={() => handleToggleClick(u)}
+                                    aria-label={isActive ? t('rfid.disableAction') : t('rfid.enableAction')}
+                                  />
+                                </span>
+                                <Button type="button" variant="ghost" size="sm" className="h-8" onClick={() => openEdit(u)}>
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 text-destructive hover:text-destructive"
+                                  onClick={() => handleDelete(u)}
+                                >
+                                  {t('support.remove')}
+                                </Button>
+                              </div>
+                            ) : null}
                           </td>
                         ) : null}
                       </tr>
@@ -323,7 +395,7 @@ export function RfidUsersTab() {
       <RfidUserFormModal
         open={formOpen}
         mode={formMode}
-        organizationId={orgId}
+        organizationId={locationsBizId}
         editingUser={editingUser}
         onOpenChange={setFormOpen}
         onSuccess={() => {

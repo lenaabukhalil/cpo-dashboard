@@ -15,6 +15,8 @@ export interface FinancialSummaryData {
 export interface FinancialReportQueryParams {
   from: string
   to: string
+  /** organizations.id PK when viewing a granted org via CPO APIs */
+  targetOrgId?: string
   locationIds?: string
   chargerIds?: string
   connectorIds?: string
@@ -26,6 +28,9 @@ export interface FinancialReportQueryParams {
 
 function buildFinancialRequestQuery(params: FinancialReportQueryParams): Record<string, string> {
   const query: Record<string, string> = { from: params.from, to: params.to }
+  if (params.targetOrgId != null && String(params.targetOrgId).trim() !== '') {
+    query.targetOrgId = String(params.targetOrgId).trim()
+  }
   if (params.locationIds != null && String(params.locationIds).trim() !== '') {
     query.locationIds = String(params.locationIds).trim()
   }

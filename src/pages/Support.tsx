@@ -15,6 +15,7 @@ import {
   type MaintenanceTicket,
 } from '../services/api'
 import { useAuth } from '../context/AuthContext'
+import { useAccessibleOrgs, getLocationsBizId } from '../hooks/useAccessibleOrgs'
 import { canDeleteSupportTicket } from '../lib/permissions'
 import { AppSelect } from '../components/shared/AppSelect'
 import { EmptyState } from '../components/EmptyState'
@@ -24,6 +25,8 @@ import { formatDate } from '../lib/dateFormat'
 export default function Support() {
   const { t } = useTranslation()
   const { user } = useAuth()
+  const { selectedOrg, ownOrg, loading: orgsLoading } = useAccessibleOrgs()
+  const locationsBizId = getLocationsBizId(selectedOrg, ownOrg)
 
   const STATUS_OPTIONS = [
     { value: 'new', label: t('support.new') },
@@ -90,12 +93,12 @@ export default function Support() {
   }, [user?.organization_id])
 
   useEffect(() => {
-    if (!user?.organization_id) return
-    getLocations(user.organization_id).then((r) => {
+    if (orgsLoading || locationsBizId == null) return
+    getLocations(locationsBizId).then((r) => {
       const d = (r as { data?: { location_id: number; name: string }[] }).data ?? (r as unknown as { data?: { location_id: number; name: string }[] }).data
       setLocations(Array.isArray(d) ? d : [])
     })
-  }, [user?.organization_id])
+  }, [locationsBizId, orgsLoading, selectedOrg?.id])
 
   const loadChargersForLocation = (locationId: number) => {
     getChargers(locationId).then((r) => {

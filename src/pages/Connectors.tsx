@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Search, ChevronDown } from 'lucide-react'
-import { useAuth } from '../context/AuthContext'
+import { useAccessibleOrgs, getLocationsBizId } from '../hooks/useAccessibleOrgs'
 import { getLocations } from '../services/api'
 import { getChargers } from '../services/api'
 import {
@@ -57,8 +57,8 @@ function StatusPill({ value }: { value: string }) {
 }
 
 export default function Connectors() {
-  const { user } = useAuth()
-  const orgId = user?.organization_id
+  const { selectedOrg, ownOrg, loading: orgsLoading } = useAccessibleOrgs()
+  const bizId = getLocationsBizId(selectedOrg, ownOrg)
 
   const [activeTab, setActiveTab] = useState<'status' | 'connectors'>('status')
   const [locations, setLocations] = useState<{ location_id: number; name: string }[]>([])
@@ -87,11 +87,11 @@ export default function Connectors() {
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    if (orgId == null) return
-    getLocations(orgId).then((r) => {
+    if (orgsLoading || bizId == null) return
+    getLocations(bizId).then((r) => {
       if (r.success && r.data) setLocations(Array.isArray(r.data) ? r.data : [])
     })
-  }, [orgId])
+  }, [bizId, orgsLoading, selectedOrg?.id])
 
   useEffect(() => {
     if (activeTab !== 'status' || locations.length === 0) return
@@ -275,7 +275,10 @@ export default function Connectors() {
     setTimeout(() => setMessage(''), 3000)
   }
 
-  if (orgId == null) {
+  if (orgsLoading) {
+    return <div className="space-y-6"><p className="text-muted-foreground">Loading...</p></div>
+  }
+  if (bizId == null) {
     return (
       <div className="space-y-6">
         <p className="text-destructive">No organization assigned.</p>
@@ -372,7 +375,7 @@ export default function Connectors() {
                 <div>
                   <label className="block text-sm font-medium mb-1">Organization</label>
                   <div className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground cursor-default pointer-events-none">
-                    <span>{orgId != null ? `Organization ${orgId}` : '—'}</span>
+                    <span>{bizId != null ? `Organization ${bizId}` : '—'}</span>
                     <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" aria-hidden />
                   </div>
                 </div>

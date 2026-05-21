@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Search, ChevronDown } from 'lucide-react'
-import { useAuth } from '../context/AuthContext'
+import { useAccessibleOrgs, getLocationsBizId } from '../hooks/useAccessibleOrgs'
 import {
   getLocations,
   createLocation,
@@ -80,7 +80,8 @@ function AvailabilityPill({ value }: { value: string }) {
 }
 
 export default function Locations() {
-  const { user } = useAuth()
+  const { selectedOrg, ownOrg, loading: orgsLoading } = useAccessibleOrgs()
+  const bizId = getLocationsBizId(selectedOrg, ownOrg)
   const [activeTab, setActiveTab] = useState<'list' | 'manage'>('list')
   const [list, setList] = useState<LocationType[]>([])
   const [loading, setLoading] = useState(true)
@@ -89,18 +90,16 @@ export default function Locations() {
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(10)
   const [selectedLocationId, setSelectedLocationId] = useState<number | 'new'>('new')
-  const [form, setForm] = useState<CreateLocationBody>(() => emptyLocationForm(user?.organization_id ?? 0))
+  const [form, setForm] = useState<CreateLocationBody>(() => emptyLocationForm(0))
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState('')
   const [locationToDelete, setLocationToDelete] = useState<number | null>(null)
   const [deleting, setDeleting] = useState(false)
 
-  const orgId = user?.organization_id
-
   const load = () => {
-    if (orgId == null) return
+    if (bizId == null) return
     setLoading(true)
-    getLocations(orgId)
+    getLocations(bizId)
       .then((r) => {
         if (r.success && r.data) setList(Array.isArray(r.data) ? r.data : [])
         else setError(r.message || 'Failed to load')
@@ -109,17 +108,18 @@ export default function Locations() {
   }
 
   useEffect(() => {
-    if (orgId != null) load()
+    if (orgsLoading) return
+    if (bizId != null) load()
     else setLoading(false)
-  }, [orgId])
+  }, [bizId, orgsLoading, selectedOrg?.id])
 
   useEffect(() => {
-    if (orgId != null) setForm((f) => ({ ...f, organization_id: orgId }))
-  }, [orgId])
+    if (bizId != null) setForm((f) => ({ ...f, organization_id: bizId }))
+  }, [bizId])
 
   useEffect(() => {
     if (selectedLocationId === 'new') {
-      setForm((f) => ({ ...emptyLocationForm(orgId ?? 0), organization_id: f.organization_id }))
+      setForm((f) => ({ ...emptyLocationForm(bizId ?? 0), organization_id: f.organization_id }))
       return
     }
     const loc = list.find((l) => l.location_id === selectedLocationId)
@@ -151,7 +151,7 @@ export default function Locations() {
         ocpi_directions_en: loc.ocpi_directions_en ?? '',
       })
     }
-  }, [selectedLocationId, orgId])
+  }, [selectedLocationId, bizId])
 
   const filteredList = useMemo(() => {
     if (!listSearch.trim()) return list
@@ -186,12 +186,12 @@ export default function Locations() {
         load()
       } else setMessage(res.message || 'Update failed')
     } else {
-      const res = await createLocation({ ...form, organization_id: orgId! })
+      const res = await createLocation({ ...form, organization_id: bizId! })
       setSubmitting(false)
       if (res.success) {
         setMessage('Location created.')
         setSelectedLocationId('new')
-        setForm(emptyLocationForm(orgId!))
+        setForm(emptyLocationForm(bizId!))
         load()
       } else setMessage(res.message || 'Create failed')
     }
@@ -229,7 +229,7 @@ export default function Locations() {
           ocpi_directions_en: loc.ocpi_directions_en ?? '',
         })
       }
-    } else setForm(emptyLocationForm(orgId ?? 0))
+    } else setForm(emptyLocationForm(bizId ?? 0))
   }
 
   const handleDeleteLocation = async () => {
@@ -238,7 +238,7 @@ export default function Locations() {
     if (res.success) {
       setMessage('Location deleted.')
       setSelectedLocationId('new')
-      setForm(emptyLocationForm(orgId ?? 0))
+      setForm(emptyLocationForm(bizId ?? 0))
       load()
     } else setMessage(res.message || 'Delete failed')
     setTimeout(() => setMessage(''), 3000)
@@ -246,7 +246,10 @@ export default function Locations() {
 
   const isEditMode = selectedLocationId !== 'new'
 
-  if (orgId == null) {
+  if (orgsLoading) {
+    return <div className="space-y-6"><p className="text-muted-foreground">Loading...</p></div>
+  }
+  if (bizId == null) {
     return (
       <div className="space-y-6">
         <p className="text-destructive">No organization assigned.</p>
@@ -369,7 +372,7 @@ export default function Locations() {
                 <div>
                   <label className="block text-sm font-medium mb-1">Organization</label>
                   <div className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground cursor-default pointer-events-none">
-                    <span>{loading ? 'Loading...' : (orgId != null ? `Organization ${orgId}` : '—')}</span>
+                    <span>{loading ? 'Loading...' : (bizId != null ? `Organization ${bizId}` : '—')}</span>
                     <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" aria-hidden />
                   </div>
                 </div>

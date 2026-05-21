@@ -11,8 +11,10 @@ import {
   type FinancialBillRow,
   type FinancialReportQueryParams,
 } from '../../api/financial'
+import { OrgSelector } from '../../components/shared/OrgSelector'
+import { useAccessibleOrgs } from '../../hooks/useAccessibleOrgs'
+import type { AccessibleOrg } from '../../types/org'
 import { getChargers, getConnectors, getLocations, type Charger, type Connector, type Location } from '../../services/api'
-import { useAuth } from '../../context/AuthContext'
 import { useTranslation } from '../../context/LanguageContext'
 import {
   getNowDatetimeLocal,
@@ -37,9 +39,46 @@ function financialRangeValidationMessage(code: SessionsRangeValidationError, t: 
 
 const BILLS_PER_PAGE = 10
 
+/** Locations use business `organization_id`; API may return rows for other orgs when grants exist. */
+function filterLocationsForOrg(list: Location[], org: AccessibleOrg): Location[] {
+  const bizId = org.biz_id
+  const pk = org.id
+  return list.filter((loc) => {
+    const oid = Number(loc.organization_id)
+    return oid === bizId || oid === pk
+  })
+}
+
+function chargerLocationId(charger: Charger): number {
+  const rec = charger as Charger & { location_id?: number }
+  const raw = charger.locationId ?? rec.location_id
+  const n = typeof raw === 'number' ? raw : Number(String(raw ?? '').trim())
+  return Number.isFinite(n) ? n : 0
+}
+
 export default function FinancialReport() {
-  const { user } = useAuth()
   const { t } = useTranslation()
+  const {
+    orgs,
+    ownOrg,
+    selectedOrgPK,
+    setSelectedOrgPK,
+    getTargetOrgIdParam,
+    hasGrants,
+    loading: orgsLoading,
+  } = useAccessibleOrgs()
+
+  /** Resolve from dropdown PK (same value OrgSelector uses), not hook selectedOrg alone. */
+  const activeOrg = useMemo((): AccessibleOrg | null => {
+    if (orgs.length === 0) return null
+    if (selectedOrgPK == null) return ownOrg
+    return orgs.find((o) => o.id === selectedOrgPK) ?? ownOrg
+  }, [orgs, selectedOrgPK, ownOrg])
+
+  const bizId = useMemo(() => {
+    const id = activeOrg?.biz_id
+    return id != null && Number.isFinite(id) ? id : undefined
+  }, [activeOrg?.biz_id])
 
   const [from, setFrom] = useState(() => getTodayMidnightDatetimeLocal())
   const [to, setTo] = useState(() => getNowDatetimeLocal())
@@ -66,34 +105,63 @@ export default function FinancialReport() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [page, setPage] = useState(1)
 
-  useEffect(() => {
-    if (!user?.organization_id) return
-    getLocations(user.organization_id).then((r) => {
-      const d = (r as { data?: Location[] }).data ?? (r as unknown as Location[])
-      setLocations(Array.isArray(d) ? d : [])
-    })
-  }, [user?.organization_id])
+  const fetchFilteredLocationTree = useCallback(async (org: AccessibleOrg) => {
+    const orgBizId = org.biz_id
+    console.log('[FinancialReport] locations fetch', { selectedOrg: org, bizId: orgBizId })
+    const r = await getLocations(orgBizId)
+    const raw = Array.isArray(r.data) ? r.data : []
+    const locList = filterLocationsForOrg(raw, org)
+    if (!locList.length) {
+      return { locations: locList, chargers: [] as Charger[] }
+    }
+    const locationIdSet = new Set(locList.map((l) => l.location_id))
+    const results = await Promise.all(locList.map((loc) => getChargers(loc.location_id)))
+    const chargers = results
+      .map((res) => {
+        const d = (res as { data?: Charger[] }).data ?? (res as unknown as Charger[])
+        return Array.isArray(d) ? d : []
+      })
+      .flat()
+      .filter((c) => locationIdSet.has(chargerLocationId(c)))
+    return { locations: locList, chargers }
+  }, [])
 
   useEffect(() => {
-    if (!locations.length) {
-      setAllOrgChargers([])
-      return
-    }
-    Promise.all(locations.map((loc) => getChargers(loc.location_id)))
-      .then((results) => {
-        const lists = results.map((r) => {
-          const d = (r as { data?: Charger[] }).data ?? (r as unknown as Charger[])
-          return Array.isArray(d) ? d : []
-        })
-        setAllOrgChargers(lists.flat())
+    if (orgsLoading || activeOrg == null || bizId == null) return
+
+    setLocationIds([])
+    setChargerIds([])
+    setConnectorIds([])
+    setConnectorsForFilter([])
+    setBills([])
+    setBillsCount(0)
+    setHasApplied(false)
+    setPage(1)
+
+    let cancelled = false
+
+    fetchFilteredLocationTree(activeOrg)
+      .then(({ locations: locList, chargers }) => {
+        if (cancelled) return
+        setLocations(locList)
+        setAllOrgChargers(chargers)
       })
-      .catch(() => setAllOrgChargers([]))
-  }, [locations])
+      .catch(() => {
+        if (!cancelled) {
+          setLocations([])
+          setAllOrgChargers([])
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedOrgPK, activeOrg, bizId, orgsLoading, fetchFilteredLocationTree])
 
   const chargerOptionsForFilter = useMemo(() => {
     if (locationIds.length === 0) return allOrgChargers
     const set = new Set(locationIds.map((id) => Number(id)))
-    return allOrgChargers.filter((c) => set.has(Number(c.locationId ?? c.id)))
+    return allOrgChargers.filter((c) => set.has(chargerLocationId(c)))
   }, [allOrgChargers, locationIds])
 
   const locationOptions = useMemo(
@@ -141,6 +209,8 @@ export default function FinancialReport() {
     const f = from.trim()
     const toVal = to.trim()
     const params: FinancialReportQueryParams = { from: f, to: toVal }
+    const targetOrgId = getTargetOrgIdParam()
+    if (targetOrgId) params.targetOrgId = targetOrgId
     if (locationIds.length > 0) params.locationIds = locationIds.join(',')
     if (chargerIds.length > 0) params.chargerIds = chargerIds.join(',')
     if (connectorIds.length > 0) params.connectorIds = connectorIds.join(',')
@@ -149,7 +219,7 @@ export default function FinancialReport() {
     if (energyMax.trim() !== '') params.energyMax = energyMax.trim()
     if (dateOrder === 'asc') params.dateOrder = 'asc'
     return params
-  }, [from, to, locationIds, chargerIds, connectorIds, sessionType, energyMin, energyMax, dateOrder])
+  }, [from, to, locationIds, chargerIds, connectorIds, sessionType, energyMin, energyMax, dateOrder, getTargetOrgIdParam])
 
   const validateFilters = useCallback((): boolean => {
     const f = from.trim()
@@ -171,10 +241,15 @@ export default function FinancialReport() {
 
   const handleApply = useCallback(async () => {
     if (!validateFilters()) return
+    if (activeOrg == null || bizId == null || orgsLoading) return
+    const orgForFetch = activeOrg
     const params = buildFinancialParams()
     setMainLoading(true)
     setPage(1)
     try {
+      const { locations: locList, chargers } = await fetchFilteredLocationTree(orgForFetch)
+      setLocations(locList)
+      setAllOrgChargers(chargers)
       const bRes = await getFinancialBills(params)
 
       const bData = (bRes as { data?: FinancialBillRow[] }).data
@@ -192,7 +267,7 @@ export default function FinancialReport() {
     } finally {
       setMainLoading(false)
     }
-  }, [buildFinancialParams, t, validateFilters])
+  }, [activeOrg, bizId, orgsLoading, buildFinancialParams, fetchFilteredLocationTree, t, validateFilters])
 
   const clearFilters = () => {
     setLocationIds([])
@@ -276,7 +351,18 @@ export default function FinancialReport() {
                   emptyTimeDefault="23:59"
                 />
               </div>
-              <div className="space-y-1.5 min-w-[180px]">
+              {hasGrants ? (
+                <div className="min-w-[180px] max-w-[180px] shrink-0 [&>div>p]:hidden">
+                  <OrgSelector
+                    orgs={orgs}
+                    value={selectedOrgPK}
+                    onChange={setSelectedOrgPK}
+                    loading={orgsLoading}
+                    className="space-y-1.5 [&>div:first-child]:max-w-none [&>div:first-child]:w-full"
+                  />
+                </div>
+              ) : null}
+              <div className="space-y-1.5 min-w-[180px] max-w-[180px]">
                 <Label className="text-xs text-muted-foreground">{t('list.location')}</Label>
                 <AppMultiSelect
                   options={locationOptions}
@@ -286,7 +372,7 @@ export default function FinancialReport() {
                   className="bg-background"
                 />
               </div>
-              <div className="space-y-1.5 min-w-[180px]">
+              <div className="space-y-1.5 min-w-[180px] max-w-[180px]">
                 <Label className="text-xs text-muted-foreground">{t('list.charger')}</Label>
                 <AppMultiSelect
                   options={chargerFilterOptions}

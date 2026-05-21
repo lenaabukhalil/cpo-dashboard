@@ -6,18 +6,15 @@ type RefreshFailureHandler = () => void
 /** Refresh this many ms BEFORE the JWT actually expires. 5 minutes. */
 const REFRESH_LEAD_MS = 5 * 60 * 1000
 
-/** If the user has been idle this long, stop auto-refreshing. 25 minutes. */
-const IDLE_THRESHOLD_MS = 25 * 60 * 1000
-
 /** Minimum gap between refresh attempts to avoid hammering on errors. */
 const MIN_REFRESH_INTERVAL_MS = 60 * 1000
 
 let scheduledTimer: ReturnType<typeof setTimeout> | null = null
-let lastActivityAt = Date.now()
 let lastRefreshAt = 0
 let inFlight: Promise<boolean> | null = null
 let onSuccess: RefreshSuccessHandler | null = null
 let onFailure: RefreshFailureHandler | null = null
+let visibilityHandler: (() => void) | null = null
 
 /** Parse JWT payload (no signature verification — purely to read `exp`). */
 function decodeJwtExp(token: string): number | null {
@@ -29,15 +26,6 @@ function decodeJwtExp(token: string): number | null {
   } catch {
     return null
   }
-}
-
-function markActivity() {
-  lastActivityAt = Date.now()
-}
-
-/** Was the user active in the last IDLE_THRESHOLD_MS? */
-function isActive(): boolean {
-  return Date.now() - lastActivityAt < IDLE_THRESHOLD_MS
 }
 
 /** Public: trigger an immediate refresh attempt. Deduped: concurrent callers
@@ -87,61 +75,32 @@ function scheduleNextRefresh() {
   const fireAt = expMs - REFRESH_LEAD_MS
   const delay = Math.max(1000, fireAt - Date.now())
   scheduledTimer = setTimeout(() => {
-    if (isActive()) {
-      performRefresh()
-    } else {
-      // user is idle — wait for activity, then refresh
-      const waitForActivity = () => {
-        if (isActive()) {
-          window.removeEventListener('mousemove', waitForActivity)
-          window.removeEventListener('keydown', waitForActivity)
-          window.removeEventListener('click', waitForActivity)
-          window.removeEventListener('visibilitychange', onVisible)
-          performRefresh()
-        }
-      }
-      const onVisible = () => {
-        if (document.visibilityState === 'visible') {
-          markActivity()
-          waitForActivity()
-        }
-      }
-      window.addEventListener('mousemove', waitForActivity)
-      window.addEventListener('keydown', waitForActivity)
-      window.addEventListener('click', waitForActivity)
-      window.addEventListener('visibilitychange', onVisible)
-    }
+    void performRefresh()
   }, delay)
 }
 
-/** Start the refresh manager. Wire up activity listeners + initial schedule. */
+/** Start the refresh manager. Wire up visibility listener + initial schedule. */
 export function startTokenRefresh(
   successHandler: RefreshSuccessHandler,
   failureHandler: RefreshFailureHandler,
 ) {
+  stopTokenRefresh()
   onSuccess = successHandler
   onFailure = failureHandler
-  lastActivityAt = Date.now()
-  window.addEventListener('mousemove', markActivity, { passive: true })
-  window.addEventListener('keydown', markActivity, { passive: true })
-  window.addEventListener('click', markActivity, { passive: true })
-  window.addEventListener('touchstart', markActivity, { passive: true })
-  // refresh when tab becomes visible again (covers laptops waking from sleep)
-  document.addEventListener('visibilitychange', () => {
+  visibilityHandler = () => {
     if (document.visibilityState === 'visible') {
-      markActivity()
       const token = localStorage.getItem('cpo_token')
       if (!token) return
       const expMs = decodeJwtExp(token)
       if (!expMs) return
-      // if token will expire within REFRESH_LEAD_MS, refresh immediately
       if (expMs - Date.now() < REFRESH_LEAD_MS) {
-        performRefresh()
+        void performRefresh()
       } else {
         scheduleNextRefresh()
       }
     }
-  })
+  }
+  document.addEventListener('visibilitychange', visibilityHandler)
   scheduleNextRefresh()
 }
 
@@ -150,6 +109,10 @@ export function stopTokenRefresh() {
   if (scheduledTimer) {
     clearTimeout(scheduledTimer)
     scheduledTimer = null
+  }
+  if (visibilityHandler) {
+    document.removeEventListener('visibilitychange', visibilityHandler)
+    visibilityHandler = null
   }
   onSuccess = null
   onFailure = null

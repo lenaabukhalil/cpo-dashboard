@@ -1,5 +1,4 @@
 import { useEffect, useState, useMemo } from 'react'
-import { useAuth } from '../context/AuthContext'
 import { useTranslation } from '../context/LanguageContext'
 import {
   getLocations,
@@ -7,7 +6,6 @@ import {
   getConnectors,
   getConnectorsStatus,
   getTariffs,
-  getOrg,
   type Location as LocationType,
   type Charger,
   type Connector,
@@ -22,6 +20,7 @@ import {
   Plug,
   Building2,
 } from 'lucide-react'
+import { useAccessibleOrgs } from '../hooks/useAccessibleOrgs'
 import { cn } from '../lib/utils'
 
 interface ChargerWithConnectors extends Charger {
@@ -56,8 +55,8 @@ function StatusBadge({ status, className }: { status: string; className?: string
 }
 
 export default function OrgDetails() {
-  const { user } = useAuth()
   const { t } = useTranslation()
+  const { selectedOrg, ownOrg, loading: orgsLoading, getTargetOrgIdParam } = useAccessibleOrgs()
   const [locations, setLocations] = useState<LocationWithChargers[]>([])
   const [orgName, setOrgName] = useState<string>('')
   const [loading, setLoading] = useState(true)
@@ -71,23 +70,23 @@ export default function OrgDetails() {
   const [connectorTariffCounts, setConnectorTariffCounts] = useState<Record<number, number>>({})
 
   useEffect(() => {
-    const orgId = user?.organization_id
-    if (orgId == null) {
-      setLoading(false)
-      setError(t('details.noOrgAssigned'))
+    setOrgName(selectedOrg?.name ?? ownOrg?.name ?? '')
+  }, [selectedOrg?.name, ownOrg?.name])
+
+  useEffect(() => {
+    const bizId = selectedOrg?.biz_id ?? ownOrg?.biz_id
+    if (!bizId || orgsLoading) {
+      if (!orgsLoading && !bizId) {
+        setLoading(false)
+        setError(t('details.noOrgAssigned'))
+      }
       return
     }
 
     setLoading(true)
     setError('')
 
-    const loadOrg = getOrg(orgId).then((o) => {
-      if (o.success && o.data && typeof (o.data as { name?: string }).name === 'string') {
-        setOrgName((o.data as { name: string }).name)
-      }
-    })
-
-    const loadLocations = getLocations(orgId).then((locRes) => {
+    const loadLocations = getLocations(bizId).then((locRes) => {
       if (!locRes.success || !locRes.data) return [] as LocationWithChargers[]
       const locList = Array.isArray(locRes.data) ? locRes.data : []
       return Promise.all(
@@ -111,11 +110,14 @@ export default function OrgDetails() {
       ) as Promise<LocationWithChargers[]>
     })
 
-    Promise.all([loadOrg, loadLocations])
-      .then(async ([, locWithChargers]) => {
+    loadLocations
+      .then(async (locWithChargers) => {
         const tree = locWithChargers ?? []
         try {
-          const statusRes = await getConnectorsStatus({ skipCache: true })
+          const statusRes = await getConnectorsStatus({
+            skipCache: true,
+            targetOrgId: getTargetOrgIdParam(),
+          })
           const statusList = (statusRes as { data?: { chargerId?: number; connectorId?: number; status?: string }[] }).data ?? []
           const statusMap = new Map<string, string>()
           statusList.forEach((s) => {
@@ -143,7 +145,7 @@ export default function OrgDetails() {
       })
       .catch(() => setError(t('details.loadFailed')))
       .finally(() => setLoading(false))
-  }, [user?.organization_id])
+  }, [selectedOrg?.biz_id, ownOrg?.biz_id, orgsLoading, selectedOrg?.id, getTargetOrgIdParam, t])
 
   // Load tariff counts per connector when on step 2 (connector selection)
   useEffect(() => {

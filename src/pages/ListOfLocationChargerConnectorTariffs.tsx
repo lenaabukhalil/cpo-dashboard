@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Search } from 'lucide-react'
-import { useAuth } from '../context/AuthContext'
+import { useAccessibleOrgs, getLocationsBizId } from '../hooks/useAccessibleOrgs'
 import { useTranslation } from '../context/LanguageContext'
 import {
   getLocations,
@@ -240,10 +240,10 @@ interface TariffRow {
 const PER_PAGE_DEFAULT = 10
 
 export default function ListOfLocationChargerConnectorTariffs() {
-  const { user } = useAuth()
+  const { selectedOrg, ownOrg, loading: orgsLoading } = useAccessibleOrgs()
+  const bizId = getLocationsBizId(selectedOrg, ownOrg) ?? null
   const { t } = useTranslation()
   const tabs = useListTabs()
-  const orgId = user?.organization_id ?? null
 
   const [activeTab, setActiveTab] = useState<TabId>('location')
   const [locations, setLocations] = useState<LocationType[]>([])
@@ -267,14 +267,16 @@ export default function ListOfLocationChargerConnectorTariffs() {
   const [perPageChargerOnline, setPerPageChargerOnline] = useState(PER_PAGE_DEFAULT)
 
   useEffect(() => {
-    if (orgId == null) {
-      setLoading(false)
-      setChargerStatusByChargerId({})
-      setConnectorsStatusSummary(null)
+    if (orgsLoading || bizId == null) {
+      if (!orgsLoading && bizId == null) {
+        setLoading(false)
+        setChargerStatusByChargerId({})
+        setConnectorsStatusSummary(null)
+      }
       return
     }
     setLoading(true)
-    getLocations(orgId)
+    getLocations(bizId)
       .then((r) => {
         if (!r.success || !r.data) return []
         return Array.isArray(r.data) ? r.data : []
@@ -370,7 +372,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [orgId])
+  }, [bizId, orgsLoading, selectedOrg?.id])
 
   const filteredLocations = useMemo(() => {
     if (!search.trim()) return locations
@@ -489,7 +491,7 @@ export default function ListOfLocationChargerConnectorTariffs() {
     setSearch('')
   }
 
-  if (orgId == null) {
+  if (!orgsLoading && bizId == null) {
     return (
       <div className="space-y-6">
         <p className="text-destructive">No organization assigned.</p>

@@ -13,6 +13,7 @@ import {
   type PeriodicMaintenance,
 } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
+import { useAccessibleOrgs, getLocationsBizId } from '../../hooks/useAccessibleOrgs'
 import { useTranslation } from '../../context/LanguageContext'
 import { AppSelect } from '../../components/shared/AppSelect'
 import { EmptyState } from '../../components/EmptyState'
@@ -39,6 +40,8 @@ const SCOPE_OPTIONS = [
 export default function SupportMaintenance() {
   const { t } = useTranslation()
   const { user } = useAuth()
+  const { selectedOrg, ownOrg, loading: orgsLoading } = useAccessibleOrgs()
+  const locationsBizId = getLocationsBizId(selectedOrg, ownOrg)
   const [list, setList] = useState<PeriodicMaintenance[]>([])
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
@@ -80,12 +83,12 @@ export default function SupportMaintenance() {
   }, [orgId])
 
   useEffect(() => {
-    if (!user?.organization_id) return
-    getLocations(user.organization_id).then((r) => {
+    if (orgsLoading || locationsBizId == null) return
+    getLocations(locationsBizId).then((r) => {
       const d = (r as { data?: { location_id: number; name: string }[] }).data ?? []
       setLocations(Array.isArray(d) ? d : [])
     })
-  }, [user?.organization_id])
+  }, [locationsBizId, orgsLoading, selectedOrg?.id])
 
   const loadChargersForLocation = (locationId: number) => {
     getChargers(locationId).then((r) => {

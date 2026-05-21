@@ -1,23 +1,22 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
-import { Eye, EyeOff, Pencil, Plus, Users, X } from 'lucide-react'
+import { BookOpen, Eye, EyeOff, Pencil, Plus, Users, X } from 'lucide-react'
 import { EmptyState } from '../EmptyState'
 import { canManagePartnerUsers, hasWritePermission } from '../../lib/permissions'
 import { useAuth } from '../../context/AuthContext'
 import { useTranslation } from '../../context/LanguageContext'
 import {
-  getPartnerUsers,
-  createPartnerUser,
+  clearGetCache,
+  request,
   getRoles,
   type RbacRole,
-  updatePartnerUser,
-  deletePartnerUser,
   type PartnerUser,
 } from '../../services/api'
+import type { AccessibleOrg } from '../../types/org'
 import { useToast } from '../../contexts/ToastContext'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog'
 import {
@@ -55,6 +54,79 @@ function formatPartnerUserRole(user: PartnerUser): string {
   return '—'
 }
 
+function partnerQueryParams(
+  targetOrgId: string | undefined,
+  extra?: Record<string, string>,
+): Record<string, string> | undefined {
+  const params: Record<string, string> = { ...extra }
+  if (targetOrgId?.trim()) params.targetOrgId = targetOrgId.trim()
+  return Object.keys(params).length > 0 ? params : undefined
+}
+
+function fetchPartnerUsersList(targetOrgId: string | undefined, skipCache?: boolean) {
+  return request<{ count?: number; data: PartnerUser[] }>('/api/v4/users/partner', {
+    params: partnerQueryParams(targetOrgId),
+    skipCache: skipCache === true,
+  })
+}
+
+function createPartnerUserScoped(
+  targetOrgId: string | undefined,
+  body: {
+    first_name: string
+    last_name: string
+    country_code: number
+    mobile: string
+    email: string
+    password: string
+    role_id: number
+    user_type: string
+  },
+) {
+  return request<{ success: boolean; message?: string; insertId?: number }>('/api/v4/users/partner', {
+    method: 'POST',
+    params: partnerQueryParams(targetOrgId),
+    body: JSON.stringify(body),
+  })
+}
+
+function updatePartnerUserScoped(
+  targetOrgId: string | undefined,
+  userId: number,
+  body: Partial<{
+    f_name: string
+    l_name: string
+    mobile: string
+    email: string
+    role_id: number
+    user_type: string
+    password: string
+    is_active: boolean
+  }>,
+) {
+  return request<{ success: boolean; message?: string }>('/api/v4/users/partner', {
+    method: 'PUT',
+    params: partnerQueryParams(targetOrgId, { id: String(userId) }),
+    body: JSON.stringify(body),
+  })
+}
+
+function deletePartnerUserScoped(targetOrgId: string | undefined, userId: number) {
+  return request<{ success: boolean; message?: string }>('/api/v4/users/partner', {
+    method: 'DELETE',
+    params: partnerQueryParams(targetOrgId, { id: String(userId) }),
+  })
+}
+
+export type PartnerUsersTabProps = {
+  orgsLoading: boolean
+  selectedOrgPK: number | null
+  selectedOrg: AccessibleOrg | null
+  getTargetOrgIdParam: () => string | undefined
+  orgs: AccessibleOrg[]
+  ownOrg: AccessibleOrg | null
+}
+
 function TableSkeleton({ cols }: { cols: number }) {
   return (
     <>
@@ -71,15 +143,24 @@ function TableSkeleton({ cols }: { cols: number }) {
   )
 }
 
-export function PartnerUsersTab() {
+export function PartnerUsersTab({
+  orgsLoading,
+  selectedOrgPK,
+  selectedOrg,
+  getTargetOrgIdParam,
+  orgs,
+  ownOrg,
+}: PartnerUsersTabProps) {
   const { user, permissions } = useAuth()
   const { t } = useTranslation()
   const { pushToast } = useToast()
+  const isReadOnly = selectedOrg?.access_type === 'grant'
   const roleOptions = ROLE_OPTIONS.map((opt) => ({ value: opt.value, label: t(opt.labelKey), user_type: opt.user_type }))
   const canCreateUsers = hasWritePermission(permissions, 'users.manage')
   const legacyCanManage = canManagePartnerUsers(user?.role_name)
-  const showWriteUi = canCreateUsers || legacyCanManage
-  const writeActionsEnabled = canCreateUsers
+  const showWriteUi = !isReadOnly && (canCreateUsers || legacyCanManage)
+  const writeActionsEnabled = !isReadOnly && canCreateUsers
+  const showActionsColumn = showWriteUi || isReadOnly
 
   const [list, setList] = useState<PartnerUser[]>([])
   const [loading, setLoading] = useState(true)
@@ -103,12 +184,20 @@ export function PartnerUsersTab() {
   })
   const [submitting, setSubmitting] = useState(false)
 
-  const orgId = user?.organization_id
+  const activeTargetOrgIdRef = useRef<string | undefined>(undefined)
+
+  const resolveTargetOrgId = (): string | undefined => {
+    if (selectedOrgPK == null || orgs.length === 0) return undefined
+    const org = orgs.find((o) => o.id === selectedOrgPK) ?? ownOrg
+    if (!org) return undefined
+    return org.access_type === 'grant' ? getTargetOrgIdParam() : undefined
+  }
 
   const loadUsers = (forceRefresh = false, silent = false) => {
-    if (orgId == null) return
+    if (orgsLoading || selectedOrgPK == null) return
+    const targetOrgId = activeTargetOrgIdRef.current ?? resolveTargetOrgId()
     if (!silent) setLoading(true)
-    getPartnerUsers(orgId, forceRefresh ? { skipCache: true } : undefined)
+    fetchPartnerUsersList(targetOrgId, forceRefresh)
       .then((res) => {
         if (res.success && res.data) setList(Array.isArray(res.data) ? res.data : [])
         else setList([])
@@ -120,8 +209,36 @@ export function PartnerUsersTab() {
   }
 
   useEffect(() => {
-    loadUsers()
-  }, [orgId])
+    if (orgsLoading || selectedOrgPK == null || orgs.length === 0) return
+
+    const org = orgs.find((o) => o.id === selectedOrgPK) ?? ownOrg
+    if (!org) return
+
+    const targetOrgId = org.access_type === 'grant' ? getTargetOrgIdParam() : undefined
+    activeTargetOrgIdRef.current = targetOrgId
+
+    clearGetCache()
+
+    let cancelled = false
+    setLoading(true)
+
+    fetchPartnerUsersList(targetOrgId, true)
+      .then((res) => {
+        if (cancelled) return
+        if (res.success && res.data) setList(Array.isArray(res.data) ? res.data : [])
+        else setList([])
+      })
+      .catch(() => {
+        if (!cancelled) setList([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [orgsLoading, selectedOrgPK, getTargetOrgIdParam])
 
   const loadRolesOnce = async () => {
     if (roles || rolesLoading) return
@@ -144,10 +261,12 @@ export function PartnerUsersTab() {
   }
 
   const currentValidation = useMemo(() => validateAddPartnerUserForm(addValues), [addValues])
-  const canSubmitAdd = !submitting && canCreateUsers && Object.keys(currentValidation).length === 0
+  const canSubmitAdd =
+    !isReadOnly && !submitting && canCreateUsers && Object.keys(currentValidation).length === 0
 
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    if (isReadOnly) return
     if (!canCreateUsers) return
     setMessage('')
 
@@ -157,7 +276,7 @@ export function PartnerUsersTab() {
 
     setSubmitting(true)
     const mobileDigits = stripMobileDigits(addValues.mobile)
-    createPartnerUser({
+    createPartnerUserScoped(activeTargetOrgIdRef.current ?? resolveTargetOrgId(), {
       first_name: addValues.first_name.trim(),
       last_name: addValues.last_name.trim(),
       country_code: Number(addValues.country_code),
@@ -192,6 +311,7 @@ export function PartnerUsersTab() {
   }
 
   const openEdit = (u: PartnerUser) => {
+    if (isReadOnly) return
     setEditingUser(u)
     setEditForm({
       f_name: u.first_name ?? u.f_name ?? '',
@@ -214,6 +334,7 @@ export function PartnerUsersTab() {
 
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    if (isReadOnly) return
     if (!editingUser) return
     setMessage('')
     if (!editForm.f_name.trim() || !editForm.l_name.trim()) {
@@ -225,7 +346,7 @@ export function PartnerUsersTab() {
       return
     }
     setSubmitting(true)
-    const body: Parameters<typeof updatePartnerUser>[1] = {
+    const body: Parameters<typeof updatePartnerUserScoped>[2] = {
       f_name: editForm.f_name.trim(),
       l_name: editForm.l_name.trim(),
       mobile: editForm.mobile.trim(),
@@ -234,7 +355,7 @@ export function PartnerUsersTab() {
       user_type: editForm.user_type,
     }
     if (editForm.password && editForm.password.length >= 8) body.password = editForm.password
-    updatePartnerUser(partnerUserId(editingUser), body)
+    updatePartnerUserScoped(activeTargetOrgIdRef.current ?? resolveTargetOrgId(), partnerUserId(editingUser), body)
       .then((res) => {
         if (res.success) {
           setEditOpen(false)
@@ -250,8 +371,9 @@ export function PartnerUsersTab() {
   }
 
   const handleDelete = (userId: number) => {
+    if (isReadOnly) return
     if (!confirm(t('users.removeConfirm'))) return
-    deletePartnerUser(userId)
+    deletePartnerUserScoped(activeTargetOrgIdRef.current ?? resolveTargetOrgId(), userId)
       .then((res) => {
         if (res.success) {
           loadUsers(true, true)
@@ -263,7 +385,7 @@ export function PartnerUsersTab() {
       .catch(() => pushToast(t('common.error'), t('users.requestFailed')))
   }
 
-  const colCount = showWriteUi ? 5 : 4
+  const colCount = showActionsColumn ? 5 : 4
 
   return (
     <>
@@ -274,7 +396,7 @@ export function PartnerUsersTab() {
               <CardTitle className="text-base">{t('users.tabPartnerTitle')}</CardTitle>
               <p className="text-sm text-muted-foreground mt-1">{t('users.tabPartnerSubtitle')}</p>
             </div>
-            {canCreateUsers ? (
+            {!isReadOnly && canCreateUsers ? (
               <Button
                 type="button"
                 className="shrink-0 gap-2"
@@ -290,6 +412,14 @@ export function PartnerUsersTab() {
           </div>
         </CardHeader>
         <CardContent>
+          {isReadOnly ? (
+            <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-200">
+              <p className="flex items-start gap-2">
+                <BookOpen className="h-4 w-4 shrink-0 mt-0.5" aria-hidden />
+                <span>{t('users.partnerGrantReadOnly')}</span>
+              </p>
+            </div>
+          ) : null}
           {loading ? (
             <div className="rounded-xl border border-border overflow-hidden table-wrap table-wrapper">
               <table className="w-full text-sm border-collapse min-w-[640px]">
@@ -299,7 +429,7 @@ export function PartnerUsersTab() {
                     <th className="text-start py-3 px-4 font-semibold">{t('users.mobile')}</th>
                     <th className="text-start py-3 px-4 font-semibold">{t('users.email')}</th>
                     <th className="text-start py-3 px-4 font-semibold">{t('users.role')}</th>
-                    {showWriteUi ? (
+                    {showActionsColumn ? (
                       <th className="text-end py-3 px-4 font-semibold">{t('users.actions')}</th>
                     ) : null}
                   </tr>
@@ -314,8 +444,8 @@ export function PartnerUsersTab() {
               title={t('users.partnerEmptyTitle')}
               description={t('users.partnerEmptyDescription')}
               icon={<Users className="h-12 w-12" />}
-              actionLabel={canCreateUsers ? t('users.addPartnerUser') : undefined}
-              onAction={canCreateUsers ? () => setAddOpen(true) : undefined}
+              actionLabel={!isReadOnly && canCreateUsers ? t('users.addPartnerUser') : undefined}
+              onAction={!isReadOnly && canCreateUsers ? () => setAddOpen(true) : undefined}
             />
           ) : (
             <div className="rounded-xl border border-border overflow-hidden table-wrap table-wrapper">
@@ -326,7 +456,7 @@ export function PartnerUsersTab() {
                     <th className="text-start py-3 px-4 font-semibold">{t('users.mobile')}</th>
                     <th className="text-start py-3 px-4 font-semibold">{t('users.email')}</th>
                     <th className="text-start py-3 px-4 font-semibold">{t('users.role')}</th>
-                    {showWriteUi ? (
+                    {showActionsColumn ? (
                       <th className="text-end py-3 px-4 font-semibold">{t('users.actions')}</th>
                     ) : null}
                   </tr>
@@ -345,32 +475,36 @@ export function PartnerUsersTab() {
                           {formatPartnerUserRole(u)}
                         </span>
                       </td>
-                      {showWriteUi ? (
+                      {showActionsColumn ? (
                         <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-8"
-                              disabled={!writeActionsEnabled}
-                              title={!writeActionsEnabled ? t('common.readOnlyAccess') : t('users.editUser')}
-                              onClick={() => writeActionsEnabled && openEdit(u)}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 text-destructive hover:text-destructive"
-                              disabled={!writeActionsEnabled}
-                              title={!writeActionsEnabled ? t('common.readOnlyAccess') : t('support.remove')}
-                              onClick={() => writeActionsEnabled && handleDelete(partnerUserId(u))}
-                            >
-                              {t('support.remove')}
-                            </Button>
-                          </div>
+                          {isReadOnly ? (
+                            <span className="text-xs text-muted-foreground italic">{t('common.viewOnly')}</span>
+                          ) : showWriteUi ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8"
+                                disabled={!writeActionsEnabled}
+                                title={!writeActionsEnabled ? t('common.readOnlyAccess') : t('users.editUser')}
+                                onClick={() => writeActionsEnabled && openEdit(u)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 text-destructive hover:text-destructive"
+                                disabled={!writeActionsEnabled}
+                                title={!writeActionsEnabled ? t('common.readOnlyAccess') : t('support.remove')}
+                                onClick={() => writeActionsEnabled && handleDelete(partnerUserId(u))}
+                              >
+                                {t('support.remove')}
+                              </Button>
+                            </div>
+                          ) : null}
                         </td>
                       ) : null}
                     </tr>

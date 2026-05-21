@@ -18,7 +18,7 @@ import {
   type Charger,
   type Connector,
 } from '../services/api'
-import { useAuth } from '../context/AuthContext'
+import { useAccessibleOrgs, getLocationsBizId } from '../hooks/useAccessibleOrgs'
 import { useToast } from '../contexts/ToastContext'
 import { AppSelect } from '../components/shared/AppSelect'
 import { useTranslation } from '../context/LanguageContext'
@@ -67,7 +67,8 @@ function connectorScore(row: ConnectorComparisonRow | null, days: number): numbe
 }
 
 export default function Reports() {
-  const { user } = useAuth()
+  const { selectedOrg, ownOrg, loading: orgsLoading } = useAccessibleOrgs()
+  const locationsBizId = getLocationsBizId(selectedOrg, ownOrg)
   const { pushToast } = useToast()
   const { t } = useTranslation()
   const tabs = useReportsTabs()
@@ -111,12 +112,12 @@ export default function Reports() {
   const [connectorPdfDownloading, setConnectorPdfDownloading] = useState(false)
 
   useEffect(() => {
-    if (!user?.organization_id) return
-    getLocations(user.organization_id).then((r) => {
+    if (orgsLoading || locationsBizId == null) return
+    getLocations(locationsBizId).then((r) => {
       const d = (r as { data?: Location[] }).data ?? (r as unknown as Location[])
       setLocations(Array.isArray(d) ? d : [])
     })
-  }, [user?.organization_id])
+  }, [locationsBizId, orgsLoading, selectedOrg?.id])
 
   useEffect(() => {
     if (locationAId) {

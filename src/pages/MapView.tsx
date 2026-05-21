@@ -3,6 +3,8 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from '../context/LanguageContext'
+import { OrgSelector } from '../components/shared/OrgSelector'
+import { useAccessibleOrgs } from '../hooks/useAccessibleOrgs'
 import { getLocations, getConnectorsStatus, type ConnectorStatusRow } from '../services/api'
 import { Card, CardContent } from '../components/ui/card'
 import type { Location } from '../services/api'
@@ -131,25 +133,49 @@ function MapResizeHandler() {
 }
 
 export default function MapView() {
-  const { user } = useAuth()
+  useAuth()
   const { t } = useTranslation()
+  const {
+    orgs,
+    selectedOrg,
+    ownOrg,
+    selectedOrgPK,
+    setSelectedOrgPK,
+    getTargetOrgIdParam,
+    hasGrants,
+    loading: orgsLoading,
+  } = useAccessibleOrgs()
   const [locations, setLocations] = useState<Location[]>([])
   const [connectorsStatus, setConnectorsStatus] = useState<ConnectorStatusRow[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!user?.organization_id) {
+    const bizId = selectedOrg?.biz_id ?? ownOrg?.biz_id
+    if (orgsLoading || selectedOrgPK == null || bizId == null || !Number.isFinite(bizId)) {
       setLoading(false)
+      setLocations([])
+      setConnectorsStatus([])
       return
     }
-    Promise.all([getLocations(user.organization_id), getConnectorsStatus()])
+
+    setLoading(true)
+    const targetOrgId = getTargetOrgIdParam()
+    Promise.all([
+      getLocations(bizId),
+      getConnectorsStatus({ skipCache: true, targetOrgId }),
+    ])
       .then(([locRes, connRes]) => {
         if (locRes.success && locRes.data) setLocations(Array.isArray(locRes.data) ? locRes.data : [])
-        const data = (connRes as { data?: ConnectorStatusRow[] }).data
+        else setLocations([])
+        const data = connRes.data
         setConnectorsStatus(Array.isArray(data) ? data : [])
       })
+      .catch(() => {
+        setLocations([])
+        setConnectorsStatus([])
+      })
       .finally(() => setLoading(false))
-  }, [user?.organization_id])
+  }, [orgsLoading, selectedOrgPK, selectedOrg?.id, selectedOrg?.biz_id, ownOrg?.biz_id, getTargetOrgIdParam])
 
   const locationByName = useMemo(() => {
     const m = new Map<string, { lat: number; lng: number }>()
@@ -193,7 +219,7 @@ export default function MapView() {
     return [parseFloat(first.lat!), parseFloat(first.lng!)]
   }, [locations])
 
-  if (loading) {
+  if (orgsLoading || loading) {
     return (
       <div className="space-y-6 text-start">
         <div>
@@ -209,9 +235,19 @@ export default function MapView() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 w-full max-w-full min-w-0 overflow-hidden space-y-4 sm:space-y-6 text-start">
-      <div className="shrink-0">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">{t('map.title')}</h1>
-        <p className="text-sm text-muted-foreground mt-1">{t('map.subtitle')}</p>
+      <div className="shrink-0 space-y-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">{t('map.title')}</h1>
+          <p className="text-sm text-muted-foreground mt-1">{t('map.subtitle')}</p>
+        </div>
+        {hasGrants ? (
+          <OrgSelector
+            orgs={orgs}
+            value={selectedOrgPK}
+            onChange={setSelectedOrgPK}
+            loading={orgsLoading}
+          />
+        ) : null}
       </div>
       <Card className="border border-border overflow-hidden flex-1 min-h-[240px] min-w-0 flex flex-col max-h-[calc(100dvh-10rem)]">
         <div className="min-h-[240px] sm:min-h-[280px] flex-1 w-full min-w-0 max-h-[calc(100dvh-14rem)]">

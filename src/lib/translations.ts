@@ -10,6 +10,14 @@ const messages: Record<string, { en: string; ar: string }> = {
   'nav.dashboard': { en: 'Dashboard', ar: 'لوحة التحكم' },
   'nav.mapView': { en: 'Map View', ar: 'عرض الخريطة' },
   'nav.organization': { en: 'Organization', ar: 'المؤسسة' },
+  'org_selector.label': { en: 'Viewing data for organization:', ar: 'عرض البيانات لمؤسسة:' },
+  'org_selector.owner_badge': { en: 'Owner', ar: 'مالك' },
+  'org_selector.grant_badge': { en: 'Grant', ar: 'منحة' },
+  'org_selector.granted_notice': {
+    en: 'Viewing shared data from {orgName} (granted access)',
+    ar: 'عرض بيانات مشتركة من {orgName} (وصول بموجب منحة)',
+  },
+  'org_selector.aria_label': { en: 'Select organization', ar: 'اختر المؤسسة' },
   'nav.details': { en: 'Location, Charger, Connector, Tariffs', ar: 'الموقع، الشاحن، الموصل، التعرفة' },
   'nav.list': { en: 'List of Location, Charger, Connector, Tariffs', ar: 'قائمة المواقع، الشواحن، الموصلات، التعرفة' },
   'nav.partnerUsers': { en: 'Users of Organization', ar: 'مستخدمي المؤسسة' },
@@ -25,7 +33,6 @@ const messages: Record<string, { en: string; ar: string }> = {
   'grants.col.resource': { en: 'Resource', ar: 'المورد' },
   'grants.col.scope': { en: 'Scope', ar: 'النطاق' },
   'grants.col.permissions': { en: 'Permissions', ar: 'الصلاحيات' },
-  'grants.col.period': { en: 'Period', ar: 'الفترة' },
   'grants.col.status': { en: 'Status', ar: 'الحالة' },
   'grants.col.actions': { en: 'Actions', ar: 'إجراءات' },
   'grants.perm.view': { en: 'View', ar: 'عرض' },
@@ -465,6 +472,14 @@ const messages: Record<string, { en: string; ar: string }> = {
   'users.partnerEmptyDescription': {
     en: 'Add dashboard staff for your organization.',
     ar: 'أضف موظفي لوحة التحكم لمؤسستك.',
+  },
+  'users.partnerGrantReadOnly': {
+    en: 'Read-only view — you cannot add, edit, or remove users from this organization.',
+    ar: 'عرض للقراءة فقط — لا يمكنك إضافة أو تعديل أو إزالة مستخدمين من هذه المؤسسة.',
+  },
+  'users.rfidGrantReadOnly': {
+    en: 'Read-only view — you cannot add, edit, or remove RFID users from this organization.',
+    ar: 'عرض للقراءة فقط — لا يمكنك إضافة أو تعديل أو إزالة مستخدمي RFID من هذه المؤسسة.',
   },
   'users.partnerCreated': { en: 'Partner user created', ar: 'تم إنشاء مستخدم الشريك' },
   'users.partnerUpdated': { en: 'Partner user updated', ar: 'تم تحديث مستخدم الشريك' },

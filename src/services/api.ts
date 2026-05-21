@@ -1,3 +1,5 @@
+import type { AccessibleOrg, OrgAccessType } from '../types/org'
+
 const BASE = import.meta.env.VITE_API_URL || ''
 
 /** Client-side fetch timeout (maps to 504-shaped response for callers e.g. login). */
@@ -10,6 +12,17 @@ export type PermissionMap = Record<string, PermissionValue>
 /** GET cache: same URL within TTL returns cached response so data appears faster on revisit */
 const GET_CACHE_TTL_MS = 20_000 // 20 seconds
 const getCache = new Map<string, { data: unknown; at: number }>()
+
+type ApiRequestResult<T> = Promise<{
+  data?: T
+  success: boolean
+  message?: string
+  statusCode?: number
+  requiredPermission?: string
+}>
+
+/** In-flight GET dedup: concurrent identical GETs share one promise (e.g. StrictMode double-mount). */
+const inFlightRequests = new Map<string, ApiRequestResult<unknown>>()
 
 function combineAbortSignals(user: AbortSignal | undefined, timeout: AbortSignal): AbortSignal {
   if (!user) return timeout
@@ -65,6 +78,21 @@ export async function request<T>(
     }
   }
 
+  const dedupKey = isGet ? `GET:${fullPath}` : null
+  if (dedupKey) {
+    const existing = inFlightRequests.get(dedupKey)
+    if (existing) {
+      return existing as ApiRequestResult<T>
+    }
+  }
+
+  const runRequest = async (): Promise<{
+    data?: T
+    success: boolean
+    message?: string
+    statusCode?: number
+    requiredPermission?: string
+  }> => {
   const token = noAuth ? null : getToken()
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
@@ -126,6 +154,7 @@ export async function request<T>(
       clearGetCache()
       localStorage.removeItem('cpo_token')
       localStorage.removeItem('cpo_permissions')
+      localStorage.removeItem('cpo_user')
       window.location.href = '/login'
     }
     return {
@@ -139,6 +168,16 @@ export async function request<T>(
   const out = { ...json, success: json.success !== false }
   if (isGet && res.ok) getCache.set(fullPath, { data: out, at: Date.now() })
   return out
+  }
+
+  const promise = runRequest()
+  if (dedupKey) {
+    inFlightRequests.set(dedupKey, promise as ApiRequestResult<unknown>)
+    void promise.finally(() => {
+      inFlightRequests.delete(dedupKey)
+    })
+  }
+  return promise
 }
 
 // Auth
@@ -150,9 +189,10 @@ export async function login(identifier: string, password: string) {
   })
 }
 
-export async function me(opts?: { skipCache?: boolean }) {
+export async function me(opts?: { skipCache?: boolean; signal?: AbortSignal }) {
   return request<{ user: AuthUser; permissions: PermissionMap }>('/api/v4/auth/me', {
     ...(opts?.skipCache && { skipCache: true }),
+    ...(opts?.signal && { signal: opts.signal }),
   })
 }
 
@@ -915,12 +955,60 @@ export interface DashboardStats {
 // CPO API
 const CPO_API = '/api/v4/cpo'
 
-export async function getDashboardStats() {
-  return request<{ data: DashboardStats }>(`${CPO_API}/stats`)
+export type CpoRequestOpts = {
+  skipCache?: boolean
+  /** organizations.id PK — omit when viewing own org (backend default union). */
+  targetOrgId?: string
 }
 
-export async function getActiveSessions() {
-  return request<{ count: number; data: ActiveSessionRow[] }>(`${CPO_API}/active-sessions`)
+function buildCpoRequestParams(opts?: CpoRequestOpts): Record<string, string> | undefined {
+  const params: Record<string, string> = {}
+  if (opts?.targetOrgId?.trim()) params.targetOrgId = opts.targetOrgId.trim()
+  return Object.keys(params).length > 0 ? params : undefined
+}
+
+function normalizeAccessibleOrg(raw: Record<string, unknown>): AccessibleOrg | null {
+  const id = Number(raw.id)
+  const bizRaw = raw.biz_id ?? raw.organization_id
+  const biz_id = typeof bizRaw === 'number' ? bizRaw : Number(bizRaw)
+  const name = String(raw.name ?? '').trim()
+  const accessRaw = String(raw.access_type ?? '').toLowerCase()
+  const access_type: OrgAccessType = accessRaw === 'owner' ? 'owner' : 'grant'
+  if (!Number.isFinite(id) || !name) return null
+  return {
+    id,
+    biz_id: Number.isFinite(biz_id) ? biz_id : id,
+    name,
+    access_type,
+  }
+}
+
+/** Accessible orgs for grant-based switching (PK = organizations.id). */
+export async function getAccessibleOrgs(): Promise<AccessibleOrg[]> {
+  const res = await request<{ count?: number; data?: unknown[] }>(`${CPO_API}/accessible-organizations`, {
+    skipCache: true,
+  })
+  const data = res.data
+  if (!Array.isArray(data)) return []
+  return data
+    .map((row) => (row && typeof row === 'object' ? normalizeAccessibleOrg(row as Record<string, unknown>) : null))
+    .filter((o): o is AccessibleOrg => o != null)
+}
+
+export async function getDashboardStats(opts?: CpoRequestOpts) {
+  const params = buildCpoRequestParams(opts)
+  return request<DashboardStats>(`${CPO_API}/stats`, {
+    ...(params ? { params } : {}),
+    ...(opts?.skipCache && { skipCache: true }),
+  })
+}
+
+export async function getActiveSessions(opts?: CpoRequestOpts) {
+  const params = buildCpoRequestParams(opts)
+  return request<{ count: number; data: ActiveSessionRow[] }>(`${CPO_API}/active-sessions`, {
+    ...(params ? { params } : {}),
+    ...(opts?.skipCache && { skipCache: true }),
+  })
 }
 
 export async function getLocalSessions() {
@@ -997,9 +1085,14 @@ export async function getUserSessions(mobile: string) {
   return request<{ count: number; data: unknown[] }>(`${CPO_API}/user-sessions`, { params: { mobile } })
 }
 
-export async function getActiveSessionsHistory(hours?: number) {
+export async function getActiveSessionsHistory(hours?: number, opts?: CpoRequestOpts) {
+  const params: Record<string, string> = {}
+  if (hours != null) params.hours = String(hours)
+  const cpoParams = buildCpoRequestParams(opts)
+  if (cpoParams) Object.assign(params, cpoParams)
   return request<{ count: number; data: { ts: number; count: number }[] }>(`${CPO_API}/active-sessions-history`, {
-    params: hours != null ? { hours: String(hours) } : undefined,
+    ...(Object.keys(params).length > 0 ? { params } : {}),
+    ...(opts?.skipCache && { skipCache: true }),
   })
 }
 
@@ -1020,8 +1113,10 @@ export type ConnectorsStatusApiResponse = {
   statusCode?: number
 }
 
-export async function getConnectorsStatus(opts?: { skipCache?: boolean }): Promise<ConnectorsStatusApiResponse> {
+export async function getConnectorsStatus(opts?: CpoRequestOpts): Promise<ConnectorsStatusApiResponse> {
+  const params = buildCpoRequestParams(opts)
   const res = await request<ConnectorStatusRow[]>(`${CPO_API}/connectors-status`, {
+    ...(params ? { params } : {}),
     ...(opts?.skipCache && { skipCache: true }),
   })
   return res as ConnectorsStatusApiResponse

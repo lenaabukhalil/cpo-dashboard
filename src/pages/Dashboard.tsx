@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { ActionCard } from '../components/ActionCard'
 import {
+  clearGetCache,
   getDashboardStats,
   getConnectorsStatus,
   getActiveSessionsHistory,
@@ -11,6 +12,8 @@ import {
   type ConnectorsStatusSummary,
   type ActiveSessionRow,
 } from '../services/api'
+import { OrgSelector } from '../components/shared/OrgSelector'
+import { useAccessibleOrgs } from '../hooks/useAccessibleOrgs'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from '../context/LanguageContext'
 import { ActiveSessionsChart } from '../components/ActiveSessionsChart'
@@ -28,6 +31,14 @@ import {
 
 export default function Dashboard() {
   const { user } = useAuth()
+  const {
+    orgs,
+    selectedOrgPK,
+    setSelectedOrgPK,
+    getTargetOrgIdParam,
+    hasGrants,
+    loading: orgsLoading,
+  } = useAccessibleOrgs()
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<{
     activeSessions?: number
@@ -45,6 +56,8 @@ export default function Dashboard() {
   const [loadingSessions, setLoadingSessions] = useState(true)
 
   useEffect(() => {
+    if (orgsLoading || selectedOrgPK == null) return
+
     setLoading(true)
     setLoadingHistory(true)
     setLoadingSessions(true)
@@ -55,16 +68,23 @@ export default function Dashboard() {
       if (cardsDone >= CARDS_NEEDED) setLoading(false)
     }
 
-    getDashboardStats()
+    clearGetCache()
+
+    const targetOrgId = getTargetOrgIdParam()
+    const cpoOpts = { skipCache: true as const, targetOrgId }
+
+    getDashboardStats(cpoOpts)
       .then((statsRes) => {
-        if ((statsRes as { success?: boolean }).success !== false && (statsRes as { data?: unknown }).data) {
-          setStats((statsRes as { data: { activeSessions?: number; chargersOnline?: number; totalConnectors?: number; busyConnectors?: number; utilization?: number } }).data)
+        if (statsRes.success !== false && statsRes.data) {
+          setStats(statsRes.data)
+        } else {
+          setStats(null)
         }
       })
-      .catch(() => {})
+      .catch(() => setStats(null))
       .finally(hideLoadingWhenCardsReady)
 
-    getConnectorsStatus({ skipCache: true })
+    getConnectorsStatus({ skipCache: true, targetOrgId })
       .then((connectorsRes) => {
         const conn = connectorsRes.data
         setConnectorsList(Array.isArray(conn) ? conn : [])
@@ -87,24 +107,24 @@ export default function Dashboard() {
       })
       .finally(hideLoadingWhenCardsReady)
 
-    getActiveSessionsHistory(24)
+    getActiveSessionsHistory(24, cpoOpts)
       .then((historyRes) => {
-        const hist = (historyRes as { data?: { ts: number; count: number }[] }).data
+        const hist = historyRes.data
         const points = Array.isArray(hist) ? hist : []
         setHistoryPoints(points)
         if (points.length) setHistoryUpdatedAt(new Date())
       })
-      .catch(() => {})
+      .catch(() => setHistoryPoints([]))
       .finally(() => setLoadingHistory(false))
 
-    getActiveSessions()
+    getActiveSessions(cpoOpts)
       .then((sessionsRes) => {
-        const sess = (sessionsRes as { data?: ActiveSessionRow[] }).data
+        const sess = sessionsRes.data
         setActiveSessionsList(Array.isArray(sess) ? sess : [])
       })
       .catch(() => setActiveSessionsList([]))
       .finally(() => setLoadingSessions(false))
-  }, [])
+  }, [orgsLoading, selectedOrgPK, getTargetOrgIdParam])
 
   const byCharger = connectorsList.reduce<Record<number, ConnectorStatusRow[]>>((acc, row) => {
     const id = row.chargerId ?? 0
@@ -139,6 +159,15 @@ export default function Dashboard() {
           {t('dashboard.overviewFor')} {user?.f_name} {user?.l_name}
         </p>
       </div>
+
+      {hasGrants ? (
+        <OrgSelector
+          orgs={orgs}
+          value={selectedOrgPK}
+          onChange={setSelectedOrgPK}
+          loading={orgsLoading}
+        />
+      ) : null}
 
       <section
         className="rounded-2xl border border-border bg-card p-6"

@@ -1,14 +1,26 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { OrgSelector } from '../components/shared/OrgSelector'
 import { PageTabs } from '../components/PageTabs'
 import { PartnerUsersTab } from '../components/users/PartnerUsersTab'
 import { RfidUsersTab } from '../components/users/RfidUsersTab'
+import { useAccessibleOrgs } from '../hooks/useAccessibleOrgs'
 import { useTranslation } from '../context/LanguageContext'
 
 type UsersTabId = 'partner' | 'rfid'
 
 export default function PartnerUsers() {
   const { t } = useTranslation()
+  const {
+    orgs,
+    ownOrg,
+    selectedOrg,
+    selectedOrgPK,
+    setSelectedOrgPK,
+    getTargetOrgIdParam,
+    hasGrants,
+    loading: orgsLoading,
+  } = useAccessibleOrgs()
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab')
   const activeTab: UsersTabId = tabParam === 'rfid' ? 'rfid' : 'partner'
@@ -47,12 +59,38 @@ export default function PartnerUsers() {
         <p className="text-sm text-muted-foreground mt-1">{t('users.subtitle')}</p>
       </div>
 
+      {hasGrants ? (
+        <OrgSelector
+          orgs={orgs}
+          value={selectedOrgPK}
+          onChange={setSelectedOrgPK}
+          loading={orgsLoading}
+        />
+      ) : null}
+
       <div ref={tabsRef} onKeyDown={onTabsKeyDown} role="presentation">
         <PageTabs tabs={tabs} activeTab={activeTab} onTabChange={setTab} />
       </div>
 
-      {activeTab === 'partner' ? <PartnerUsersTab /> : null}
-      {rfidMounted && activeTab === 'rfid' ? <RfidUsersTab /> : null}
+      {activeTab === 'partner' ? (
+        <PartnerUsersTab
+          orgsLoading={orgsLoading}
+          selectedOrgPK={selectedOrgPK}
+          selectedOrg={selectedOrg}
+          getTargetOrgIdParam={getTargetOrgIdParam}
+          orgs={orgs}
+          ownOrg={ownOrg}
+        />
+      ) : null}
+      {rfidMounted && activeTab === 'rfid' ? (
+        <RfidUsersTab
+          orgsLoading={orgsLoading}
+          selectedOrgPK={selectedOrgPK}
+          selectedOrg={selectedOrg}
+          orgs={orgs}
+          ownOrg={ownOrg}
+        />
+      ) : null}
     </div>
   )
 }

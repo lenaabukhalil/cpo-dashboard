@@ -1,10 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import type { AuthUser, PermissionMap, PermissionValue } from '../services/api'
-import { clearGetCache, me } from '../services/api'
+import { me } from '../services/api'
+import { clearSelectedOrgPk } from '../hooks/useAccessibleOrgs'
 import { startTokenRefresh, stopTokenRefresh } from '../lib/tokenRefresh'
 
-const API_BASE = import.meta.env.VITE_API_URL || ''
 const CPO_PERMISSIONS_KEY = 'cpo_permissions'
+const CPO_USER_KEY = 'cpo_user'
 
 function parsePermissionEntry(v: unknown): PermissionValue | undefined {
   if (v === true || v === false) return v
@@ -29,11 +30,15 @@ function readStoredPermissions(): PermissionMap {
   }
 }
 
-function persistPermissions(perms: PermissionMap) {
+function readStoredUser(): AuthUser | null {
   try {
-    localStorage.setItem(CPO_PERMISSIONS_KEY, JSON.stringify(perms))
+    const cached = localStorage.getItem(CPO_USER_KEY)
+    if (!cached) return null
+    const parsed = JSON.parse(cached) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    return parsed as AuthUser
   } catch {
-    /* ignore quota / private mode */
+    return null
   }
 }
 
@@ -50,9 +55,22 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null)
+  const [user, setUserState] = useState<AuthUser | null>(readStoredUser)
   const [permissions, setPermissions] = useState<PermissionMap>(readStoredPermissions)
   const [loading, setLoading] = useState(true)
+
+  const setUser = useCallback((u: AuthUser | null) => {
+    setUserState(u)
+    try {
+      if (u) {
+        localStorage.setItem(CPO_USER_KEY, JSON.stringify(u))
+      } else {
+        localStorage.removeItem(CPO_USER_KEY)
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [])
 
   const beginRefreshLoop = useCallback(() => {
     stopTokenRefresh()
@@ -60,24 +78,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       (freshUser, freshPerms) => {
         setUser(freshUser)
         setPermissions(freshPerms)
-        persistPermissions(freshPerms)
+        try {
+          localStorage.setItem(CPO_PERMISSIONS_KEY, JSON.stringify(freshPerms))
+        } catch {
+          /* ignore */
+        }
       },
       () => {
         localStorage.removeItem('cpo_token')
+        localStorage.removeItem(CPO_USER_KEY)
         localStorage.removeItem(CPO_PERMISSIONS_KEY)
-        setUser(null)
+        setUserState(null)
         setPermissions({})
         stopTokenRefresh()
       },
     )
-  }, [])
+  }, [setUser])
 
   const setAuth = useCallback(
     (u: AuthUser | null, perms?: PermissionMap | null) => {
-      setUser(u)
       if (!u) {
+        clearSelectedOrgPk()
+        setUserState(null)
         setPermissions({})
         try {
+          localStorage.removeItem(CPO_USER_KEY)
           localStorage.removeItem(CPO_PERMISSIONS_KEY)
         } catch {
           /* ignore */
@@ -85,19 +110,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return
       }
       const next = perms ?? {}
+      setUser(u)
       setPermissions(next)
-      persistPermissions(next)
+      try {
+        localStorage.setItem(CPO_USER_KEY, JSON.stringify(u))
+        localStorage.setItem(CPO_PERMISSIONS_KEY, JSON.stringify(next))
+      } catch {
+        /* ignore */
+      }
       beginRefreshLoop()
     },
-    [beginRefreshLoop],
+    [beginRefreshLoop, setUser],
   )
 
   useEffect(() => {
     const token = localStorage.getItem('cpo_token')
+
     if (!token) {
       setLoading(false)
       return
     }
+
+    try {
+      const cachedUser = localStorage.getItem(CPO_USER_KEY)
+      if (cachedUser) {
+        const parsed = JSON.parse(cachedUser) as AuthUser
+        setUserState(parsed)
+      }
+      const cachedPerms = localStorage.getItem(CPO_PERMISSIONS_KEY)
+      if (cachedPerms) {
+        setPermissions(JSON.parse(cachedPerms) as PermissionMap)
+      }
+    } catch {
+      /* ignore corrupt cache */
+    }
+
+    setLoading(false)
+
     me({ skipCache: true })
       .then((r) => {
         const u =
@@ -109,35 +158,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (r.success && u) {
           setUser(u)
           setPermissions(perms)
-          persistPermissions(perms)
+          try {
+            localStorage.setItem(CPO_USER_KEY, JSON.stringify(u))
+            localStorage.setItem(CPO_PERMISSIONS_KEY, JSON.stringify(perms))
+          } catch {
+            /* ignore */
+          }
           beginRefreshLoop()
-        } else {
+          return
+        }
+        if (r.statusCode === 401) {
           localStorage.removeItem('cpo_token')
+          localStorage.removeItem(CPO_USER_KEY)
           localStorage.removeItem(CPO_PERMISSIONS_KEY)
-          clearGetCache()
-          setUser(null)
+          setUserState(null)
           setPermissions({})
+          stopTokenRefresh()
+          window.location.href = '/login'
         }
       })
-      .finally(() => setLoading(false))
-  }, [beginRefreshLoop])
+      .catch(() => {
+        /* network errors: keep cached user + token */
+      })
+  }, [beginRefreshLoop, setUser])
 
-  const logout = () => {
+  const logout = useCallback(() => {
     stopTokenRefresh()
-    const token = localStorage.getItem('cpo_token')
+    clearSelectedOrgPk()
     localStorage.removeItem('cpo_token')
+    localStorage.removeItem(CPO_USER_KEY)
     localStorage.removeItem(CPO_PERMISSIONS_KEY)
-    clearGetCache()
-    setUser(null)
+    setUserState(null)
     setPermissions({})
-    if (token) {
-      fetch(API_BASE + '/api/v4/auth/logout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: '{}',
-      }).catch(() => {})
-    }
-  }
+    window.location.href = '/login'
+  }, [])
 
   return (
     <AuthContext.Provider value={{ user, permissions, loading, setUser, setAuth, logout }}>

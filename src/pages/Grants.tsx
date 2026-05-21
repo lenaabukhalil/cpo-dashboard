@@ -11,7 +11,6 @@ import { AppSelect } from '../components/shared/AppSelect'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from '../context/LanguageContext'
 import { cn } from '../lib/utils'
-import { formatDate } from '../lib/dateFormat'
 import {
   createGrant,
   getGrants,
@@ -82,12 +81,6 @@ function isGrantOutgoing(g: Grant, orgId: number): boolean {
     return g.target_organization_id === orgId
   }
   return false
-}
-
-function formatPeriod(starts?: string | null, ends?: string | null): string {
-  const s = starts ? formatDate(starts) : '—'
-  const e = ends ? formatDate(ends) : '—'
-  return `${s} → ${e}`
 }
 
 function PermissionBadges({ grant, t }: { grant: Grant; t: (k: string) => string }) {
@@ -309,7 +302,6 @@ export default function Grants() {
               <th className="text-start py-3 px-4 font-semibold">{t('grants.col.resource')}</th>
               <th className="text-start py-3 px-4 font-semibold">{t('grants.col.scope')}</th>
               <th className="text-start py-3 px-4 font-semibold">{t('grants.col.permissions')}</th>
-              <th className="text-start py-3 px-4 font-semibold">{t('grants.col.period')}</th>
               <th className="text-start py-3 px-4 font-semibold">{t('grants.col.status')}</th>
               {showActions ? (
                 <th className="text-end py-3 px-4 font-semibold">{t('grants.col.actions')}</th>
@@ -330,9 +322,6 @@ export default function Grants() {
                 </td>
                 <td className="py-3 px-4">
                   <PermissionBadges grant={g} t={t} />
-                </td>
-                <td className="py-3 px-4 text-muted-foreground whitespace-nowrap">
-                  {formatPeriod(g.starts_at, g.ends_at)}
                 </td>
                 <td className="py-3 px-4">
                   <span

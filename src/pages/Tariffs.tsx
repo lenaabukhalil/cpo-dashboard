@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { ChevronDown } from 'lucide-react'
-import { useAuth } from '../context/AuthContext'
+import { useAccessibleOrgs, getLocationsBizId } from '../hooks/useAccessibleOrgs'
 import { getLocations } from '../services/api'
 import { getChargers } from '../services/api'
 import { getConnectors } from '../services/api'
@@ -25,8 +25,8 @@ const TARIFF_STATUSES = ['active', 'inactive'] as const
 const PEAK_TYPES = ['NA', 'Peak-On_AC', 'Peak-Off_AC', 'Partial-Peak_AC', 'Partial-Peak-Night_AC', 'Peak-On_DC', 'Peak-Off_DC', 'Partial-Peak_DC', 'Partial-Peak-Night_DC'] as const
 
 export default function Tariffs() {
-  const { user } = useAuth()
-  const orgId = user?.organization_id
+  const { selectedOrg, ownOrg, loading: orgsLoading } = useAccessibleOrgs()
+  const bizId = getLocationsBizId(selectedOrg, ownOrg)
 
   const [locations, setLocations] = useState<{ location_id: number; name: string }[]>([])
   const [formLocationId, setFormLocationId] = useState<number | ''>('')
@@ -46,11 +46,11 @@ export default function Tariffs() {
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    if (orgId == null) return
-    getLocations(orgId).then((r) => {
+    if (orgsLoading || bizId == null) return
+    getLocations(bizId).then((r) => {
       if (r.success && r.data) setLocations(Array.isArray(r.data) ? r.data : [])
     })
-  }, [orgId])
+  }, [bizId, orgsLoading, selectedOrg?.id])
 
   useEffect(() => {
     if (formLocationId === '') {
@@ -199,7 +199,10 @@ export default function Tariffs() {
     setTimeout(() => setMessage(''), 3000)
   }
 
-  if (orgId == null) {
+  if (orgsLoading) {
+    return <div className="space-y-6"><p className="text-muted-foreground">Loading...</p></div>
+  }
+  if (bizId == null) {
     return (
       <div className="space-y-6">
         <p className="text-destructive">No organization assigned.</p>
@@ -227,7 +230,7 @@ export default function Tariffs() {
               <div>
                 <label className="block text-sm font-medium mb-1">Organization</label>
                 <div className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground cursor-default pointer-events-none">
-                  <span>{orgId != null ? `Organization ${orgId}` : '—'}</span>
+                  <span>{bizId != null ? `Organization ${bizId}` : '—'}</span>
                   <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" aria-hidden />
                 </div>
               </div>

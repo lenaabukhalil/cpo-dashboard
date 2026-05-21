@@ -4,6 +4,7 @@ import { Input } from '../components/ui/input'
 import { Badge } from '../components/ui/badge'
 import { Activity, CheckCircle, AlertCircle, Search, MapPin, Zap, Plug } from 'lucide-react'
 import {
+  clearGetCache,
   getDashboardStats,
   getConnectorsStatus,
   getLocations,
@@ -13,9 +14,12 @@ import {
   type Charger,
   type Connector,
   type ConnectorStatusRow,
-  type ConnectorsStatusSummary,
+  type ConnectorsStatusApiResponse,
+  type DashboardStats,
 } from '../services/api'
+import { OrgSelector } from '../components/shared/OrgSelector'
 import { useAuth } from '../context/AuthContext'
+import { useAccessibleOrgs, getLocationsBizId } from '../hooks/useAccessibleOrgs'
 import { useTranslation } from '../context/LanguageContext'
 import { cn } from '../lib/utils'
 
@@ -59,6 +63,32 @@ function connectorTypeLogo(connectorType?: string | null): { src: string; alt: s
   return null
 }
 
+function chargerIdFromRow(row: ConnectorStatusRow): number {
+  const rec = row as Record<string, unknown>
+  const raw = row.chargerId ?? rec.charger_id ?? rec.chargerid
+  const n = typeof raw === 'number' ? raw : Number(String(raw ?? '').trim())
+  return Number.isFinite(n) ? n : 0
+}
+
+/** API field is `chargerStatus` (camelCase); tolerate snake_case / odd casing. */
+function chargerStatusFromRow(row: ConnectorStatusRow): string {
+  const rec = row as Record<string, unknown>
+  if (typeof rec.chargerStatus === 'string') return rec.chargerStatus
+  if (typeof rec.charger_status === 'string') return rec.charger_status
+  const key = Object.keys(rec).find((k) => k.toLowerCase().replace(/_/g, '') === 'chargerstatus')
+  return key ? String(rec[key] ?? '') : ''
+}
+
+function groupByCharger(list: ConnectorStatusRow[]): Record<number, ConnectorStatusRow[]> {
+  return list.reduce<Record<number, ConnectorStatusRow[]>>((acc, row) => {
+    const id = chargerIdFromRow(row)
+    if (!id) return acc
+    if (!acc[id]) acc[id] = []
+    acc[id].push(row)
+    return acc
+  }, {})
+}
+
 function StatusBadge({ status }: { status: string }) {
   const v = (status ?? '').toLowerCase()
   const isAvailable = ['online', 'available', 'free'].includes(v)
@@ -76,6 +106,14 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function Sessions() {
   const { user } = useAuth()
+  const {
+    orgs,
+    ownOrg,
+    selectedOrgPK,
+    setSelectedOrgPK,
+    hasGrants,
+    loading: orgsLoading,
+  } = useAccessibleOrgs()
   const { t } = useTranslation()
   const [loading, setLoading] = useState(false)
   const [statusStats, setStatusStats] = useState<{
@@ -101,93 +139,162 @@ export default function Sessions() {
     return row?.status
   }
 
-  const loadDetailsTree = (orgId: number) => {
-    setDetailsLoading(true)
-    getLocations(orgId)
-      .then((locRes) => {
-        if (!locRes.success || !locRes.data) return []
-        const locList = Array.isArray(locRes.data) ? locRes.data : []
-        return Promise.all(
-          locList.map((loc: LocationType) =>
-            getChargers(loc.location_id).then((chRes) => {
-              const chList = (chRes as { data?: Charger[] }).data ?? []
-              const chargers = Array.isArray(chList) ? chList : []
-              return Promise.all(
-                chargers.map((ch: Charger) =>
-                  getConnectors(ch.id).then((connRes) => {
-                    const connList = (connRes as { data?: Connector[] }).data ?? []
-                    return { ...ch, connectors: Array.isArray(connList) ? connList : [] }
-                  })
-                )
-              ).then((chargersWithConns) => ({ ...loc, chargers: chargersWithConns as ChargerWithConns[] }))
-            })
-          )
-        ) as Promise<LocationWithChargers[]>
-      })
-      .then((tree) => setDetailsTree(tree ?? []))
-      .catch(() => setDetailsTree([]))
-      .finally(() => setDetailsLoading(false))
-  }
-
   const [statusError, setStatusError] = useState<string | null>(null)
 
-  const loadStatus = () => {
+  useEffect(() => {
+    if (orgsLoading || selectedOrgPK == null || orgs.length === 0) return
+
+    const org = orgs.find((o) => o.id === selectedOrgPK) ?? ownOrg
+    if (!org) return
+
+    const activeOrgPK = selectedOrgPK ?? ownOrg?.id
+    const targetOrgId = activeOrgPK != null ? String(activeOrgPK) : undefined
+    const locationsBizId = getLocationsBizId(org, ownOrg)
+
+    clearGetCache()
+
+    let cancelled = false
+
     setLoading(true)
     setStatusError(null)
-    Promise.all([getDashboardStats(), getConnectorsStatus()])
+
+    Promise.all([
+      getDashboardStats({ skipCache: true, targetOrgId }),
+      getConnectorsStatus({ skipCache: true, targetOrgId }),
+    ])
       .then(([statsRes, connectorsRes]) => {
-        const statsOk = (statsRes as { success?: boolean }).success !== false
-        const connectorsOk = (connectorsRes as { success?: boolean }).success !== false
-        if (!statsOk || !connectorsOk) {
-          const msg = (statsRes as { message?: string }).message || (connectorsRes as { message?: string }).message || 'API returned an error. Check that you are logged in and your organization has access.'
-          setStatusError(msg)
+        if (cancelled) return
+
+        const errors: string[] = []
+        const statsOk = statsRes.success !== false
+        const connectorsOk = connectorsRes.success !== false
+
+        let stats: DashboardStats | undefined
+        if (statsOk && statsRes.data && typeof statsRes.data === 'object') {
+          stats = statsRes.data as DashboardStats
+        } else if (!statsOk) {
+          errors.push(statsRes.message || 'Dashboard stats request failed')
+        }
+
+        const connectorsPayload = connectorsRes as ConnectorsStatusApiResponse
+        const list = Array.isArray(connectorsPayload.data) ? connectorsPayload.data : []
+        const summary = connectorsPayload.summary ?? null
+
+        if (!connectorsOk) {
+          errors.push(connectorsPayload.message || 'Connectors status request failed')
+          setConnectorStatusList([])
+        } else {
+          setConnectorStatusList(list)
+        }
+
+        if (errors.length === 2) {
+          setStatusError(errors.join(' · '))
           setStatusStats(null)
           return
         }
-        const stats = (statsRes as { data?: { chargersOnline?: number } }).data
-        const connectors = (connectorsRes as { data?: { chargerId?: number; status?: string }[] }).data ?? []
-        const summary = (connectorsRes as { summary?: ConnectorsStatusSummary }).summary
-        const chargersOnline = stats?.chargersOnline ?? 0
-        const list = Array.isArray(connectors) ? connectors : []
-        setConnectorStatusList(list)
-        const uniqueChargers = new Set(list.map((c: { chargerId?: number }) => c.chargerId).filter(Boolean)).size
-        const totalChargers = uniqueChargers > 0 ? uniqueChargers : chargersOnline
+        if (errors.length === 1) setStatusError(errors[0]!)
+
+        const byCharger = groupByCharger(list)
+        const totalChargersFromList = Object.keys(byCharger).length
+        const onlineChargersFromList = Object.values(byCharger).filter((rows) => {
+          const first = rows[0]
+          return first != null && chargerStatusFromRow(first).toLowerCase().trim() === 'online'
+        }).length
+        const offlineChargersFromList = Object.values(byCharger).filter((rows) => {
+          const first = rows[0]
+          return first != null && chargerStatusFromRow(first).toLowerCase().trim() !== 'online'
+        }).length
+
+        const totalChargers =
+          totalChargersFromList > 0 ? totalChargersFromList : (stats?.chargersOnline ?? 0)
+        const onlineChargers =
+          totalChargersFromList > 0 ? onlineChargersFromList : (stats?.chargersOnline ?? 0)
+        const offlineChargers =
+          totalChargersFromList > 0 ? offlineChargersFromList : Math.max(0, totalChargers - onlineChargers)
+
         const totalConnectors =
           summary != null && Number.isFinite(summary.totalConnectors) ? summary.totalConnectors : list.length
+
         const availableConnector =
           summary != null && Number.isFinite(summary.availableCount)
             ? summary.availableCount
-            : list.filter((c: { status?: string }) => (c.status || '').toLowerCase() === 'available').length
-        // Busy/preparing: not counted as available or as online; separate card and distinct badge style
-        const busyPreparingStatuses = ['busy', 'preparing', 'charging', 'suspended', 'reserved', 'finishing']
-        const busyPreparingConnector = list.filter((c: { status?: string }) =>
-          busyPreparingStatuses.includes((c.status || '').toLowerCase())
-        ).length
-        // Unavailable Connector: only status === 'error' (per requirement)
-        const unavailableConnector = list.filter((c: { status?: string }) =>
-          (c.status || '').toLowerCase() === 'error'
-        ).length
+            : list.filter((r) => (r.status ?? '').toLowerCase() === 'available').length
+
+        const busyPreparingConnector =
+          summary != null && Number.isFinite(summary.busyCount)
+            ? summary.busyCount
+            : list.filter((r) => {
+                  const s = (r.status ?? '').toLowerCase()
+                  return ['busy', 'preparing', 'charging', 'suspended', 'reserved', 'finishing'].includes(s)
+                }).length
+
+        const unavailableConnector = list.filter((r) => (r.status ?? '').toLowerCase() === 'error').length
+
         setStatusStats({
-          totalChargers: totalChargers,
+          totalChargers,
           totalConnectors,
-          onlineChargers: chargersOnline,
+          onlineChargers,
           availableConnector,
           busyPreparingConnector,
-          offlineChargers: Math.max(0, totalChargers - chargersOnline),
+          offlineChargers,
           unavailableConnector,
         })
       })
       .catch(() => {
+        if (cancelled) return
         setStatusStats(null)
         setStatusError('Failed to load status. Check that the CPO API is reachable and your token is valid.')
       })
-      .finally(() => setLoading(false))
-  }
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
 
-  useEffect(() => {
-    loadStatus()
-    if (user?.organization_id) loadDetailsTree(user.organization_id)
-  }, [user?.organization_id])
+    if (locationsBizId != null) {
+      setDetailsLoading(true)
+      getLocations(locationsBizId)
+        .then((locRes) => {
+          if (cancelled || !locRes.success || !locRes.data) return [] as LocationWithChargers[]
+          const locList = Array.isArray(locRes.data) ? locRes.data : []
+          return Promise.all(
+            locList.map((loc: LocationType) =>
+              getChargers(loc.location_id).then((chRes) => {
+                if (cancelled) return { ...loc, chargers: [] as ChargerWithConns[] }
+                const chList = (chRes as { data?: Charger[] }).data ?? []
+                const chargers = Array.isArray(chList) ? chList : []
+                return Promise.all(
+                  chargers.map((ch: Charger) =>
+                    getConnectors(ch.id).then((connRes) => {
+                      if (cancelled) return { ...ch, connectors: [] }
+                      const connList = (connRes as { data?: Connector[] }).data ?? []
+                      return { ...ch, connectors: Array.isArray(connList) ? connList : [] }
+                    })
+                  )
+                ).then((chargersWithConns) => ({
+                  ...loc,
+                  chargers: chargersWithConns as ChargerWithConns[],
+                }))
+              })
+            )
+          ) as Promise<LocationWithChargers[]>
+        })
+        .then((tree) => {
+          if (!cancelled) setDetailsTree(tree ?? [])
+        })
+        .catch(() => {
+          if (!cancelled) setDetailsTree([])
+        })
+        .finally(() => {
+          if (!cancelled) setDetailsLoading(false)
+        })
+    } else {
+      setDetailsTree([])
+      setDetailsLoading(false)
+    }
+
+    return () => {
+      cancelled = true
+    }
+  }, [orgsLoading, selectedOrgPK])
 
   if (!user) {
     return null
@@ -199,6 +306,15 @@ export default function Sessions() {
         <h1 className="text-2xl font-bold tracking-tight text-foreground">{t('monitor.title')}</h1>
         <p className="text-sm text-muted-foreground mt-1">{t('monitor.subtitle')}</p>
       </div>
+
+      {hasGrants ? (
+        <OrgSelector
+          orgs={orgs}
+          value={selectedOrgPK}
+          onChange={setSelectedOrgPK}
+          loading={orgsLoading}
+        />
+      ) : null}
 
       <div className="flex items-center gap-2">
             <Search className="h-5 w-5 text-muted-foreground shrink-0" />
