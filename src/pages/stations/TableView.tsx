@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Search } from 'lucide-react'
-import { useAccessibleOrgs, getLocationsBizId } from '../hooks/useAccessibleOrgs'
-import { useTranslation } from '../context/LanguageContext'
+import { useAccessibleOrgs, getLocationsBizId } from '../../hooks/useAccessibleOrgs'
+import { useTranslation } from '../../context/LanguageContext'
 import {
   getLocations,
   getChargers,
@@ -14,14 +14,18 @@ import {
   type Tariff,
   type ConnectorStatusRow,
   type ConnectorsStatusSummary,
-} from '../services/api'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
-import { Input } from '../components/ui/input'
-import { TablePagination } from '../components/TablePagination'
-import { EmptyState } from '../components/EmptyState'
-import { PageTabs } from '../components/PageTabs'
-import { cn } from '../lib/utils'
-import { formatDateTime } from '../lib/dateFormat'
+} from '../../services/api'
+import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
+import { Input } from '../../components/ui/input'
+import { TablePagination } from '../../components/TablePagination'
+import { EmptyState } from '../../components/EmptyState'
+import { PageTabs } from '../../components/PageTabs'
+import { cn } from '../../lib/utils'
+import { formatDateTime } from '../../lib/dateFormat'
+
+interface TableViewProps {
+  embedded?: boolean
+}
 
 const TAB_IDS = ['location', 'charger', 'connector', 'tariff'] as const
 function useListTabs(): { id: (typeof TAB_IDS)[number]; labelKey: string }[] {
@@ -239,7 +243,7 @@ interface TariffRow {
 
 const PER_PAGE_DEFAULT = 10
 
-export default function ListOfLocationChargerConnectorTariffs() {
+export default function TableView({ embedded }: TableViewProps) {
   const { selectedOrg, ownOrg, loading: orgsLoading } = useAccessibleOrgs()
   const bizId = getLocationsBizId(selectedOrg, ownOrg) ?? null
   const { t } = useTranslation()
@@ -504,10 +508,14 @@ export default function ListOfLocationChargerConnectorTariffs() {
   return (
     <div className="space-y-6 text-start">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">{t('list.title')}</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {t('list.subtitle')}
-        </p>
+        {!embedded && (
+          <>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">{t('list.title')}</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              {t('list.subtitle')}
+            </p>
+          </>
+        )}
         <PageTabs tabs={tabsWithLabels} activeTab={activeTab} onTabChange={handleTabChange} />
       </div>
 

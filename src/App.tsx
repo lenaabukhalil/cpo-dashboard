@@ -17,7 +17,6 @@ import MapView from './pages/MapView'
 import PartnerUsers from './pages/PartnerUsers'
 import Grants from './pages/Grants'
 import SupportLayout from './pages/support/SupportLayout'
-import ListOfLocationChargerConnectorTariffs from './pages/ListOfLocationChargerConnectorTariffs'
 import AuditLog from './pages/AuditLog'
 import Profile from './pages/Profile'
 import NotificationDetail from './pages/NotificationDetail'
@@ -61,7 +60,7 @@ function AppRoutes() {
         <Route index element={<IndexRedirect />} />
         <Route path="org" element={<RoleGuard><Org /></RoleGuard>} />
         <Route path="details" element={<RoleGuard><OrgDetails /></RoleGuard>} />
-        <Route path="list" element={<RoleGuard><ListOfLocationChargerConnectorTariffs /></RoleGuard>} />
+        <Route path="list" element={<Navigate to="/details?view=table" replace />} />
         <Route path="sessions" element={<RoleGuard><Sessions /></RoleGuard>} />
         <Route path="reports" element={<RoleGuard><Reports /></RoleGuard>} />
         <Route path="predictive-ai" element={<RoleGuard><PredictiveAI /></RoleGuard>} />

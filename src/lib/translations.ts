@@ -20,6 +20,7 @@ const messages: Record<string, { en: string; ar: string }> = {
   'org_selector.aria_label': { en: 'Select organization', ar: 'اختر المؤسسة' },
   'nav.details': { en: 'Location, Charger, Connector, Tariffs', ar: 'الموقع، الشاحن، الموصل، التعرفة' },
   'nav.list': { en: 'List of Location, Charger, Connector, Tariffs', ar: 'قائمة المواقع، الشواحن، الموصلات، التعرفة' },
+  'nav.stations': { en: 'Inside Organization', ar: 'داخل المؤسسة' },
   'nav.partnerUsers': { en: 'Users of Organization', ar: 'مستخدمي المؤسسة' },
   'nav.grants': { en: 'Resource Grants', ar: 'صلاحيات الموارد' },
   'grants.title': { en: 'Resource Grants', ar: 'صلاحيات الموارد' },
@@ -757,6 +758,15 @@ const messages: Record<string, { en: string; ar: string }> = {
   'list.booked': { en: 'booked', ar: 'محجوز' },
   'list.error': { en: 'error', ar: 'خطأ' },
   'list.charging': { en: 'charging', ar: 'شحن' },
+
+  // Stations (unified page)
+  'stations.title': { en: 'Inside Organization', ar: 'داخل المؤسسة' },
+  'stations.subtitle': {
+    en: 'Browse your network as a guided wizard or as full data tables',
+    ar: 'تصفح شبكتك كمعالج خطوة بخطوة أو كجداول بيانات كاملة',
+  },
+  'stations.viewWizard': { en: 'Wizard', ar: 'معالج' },
+  'stations.viewTable': { en: 'Table', ar: 'جداول' },
 
   // OrgDetails (Location, Charger, Connector, Tariffs - step by step)
   'details.title': { en: 'Location, Charger, Connector, Tariffs', ar: 'الموقع، الشاحن، الموصل، التعرفة' },

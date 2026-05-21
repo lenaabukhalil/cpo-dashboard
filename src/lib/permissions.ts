@@ -21,7 +21,6 @@ export { ACCOUNTANT_HOME_PATH } from '../config/sidebar'
 export const ROUTE_PERMISSIONS: Record<string, { code: string; access: Access }> = {
   '/org': { code: 'organizations.view', access: 'R' },
   '/details': { code: 'stations.view', access: 'R' },
-  '/list': { code: 'stations.view', access: 'R' },
   '/sessions': { code: 'sessions.view', access: 'R' },
   '/reports': { code: 'reports.view', access: 'R' },
   '/support': { code: 'support.view', access: 'R' },

@@ -9,7 +9,6 @@ import {
   Users,
   Share2,
   Map,
-  Table,
   ScrollText,
 } from 'lucide-react'
 import type { NavItem } from '../lib/permissions'
@@ -66,21 +65,11 @@ export const SIDEBAR_ITEMS: SidebarItemConfig[] = [
     roles: ['platform_admin', 'org_admin', 'manager'],
   },
   {
-    key: 'location_charger',
+    key: 'stations',
     path: '/details',
-    label: 'Location, Charger, Connector, Tariffs',
-    labelKey: 'nav.details',
+    label: 'Locations & Stations',
+    labelKey: 'nav.stations',
     icon: List,
-    section: 'Organizations',
-    groupKey: 'group.organizations',
-    roles: ['platform_admin', 'org_admin', 'manager', 'engineer'],
-  },
-  {
-    key: 'list_location',
-    path: '/list',
-    label: 'List of Location, Charger, Connector, Tariffs',
-    labelKey: 'nav.list',
-    icon: Table,
     section: 'Organizations',
     groupKey: 'group.organizations',
     roles: ['platform_admin', 'org_admin', 'org_accountant', 'manager', 'engineer'],
@@ -151,7 +140,7 @@ export const SIDEBAR_ITEMS: SidebarItemConfig[] = [
 /** Routes not in the sidebar but still guarded for admin roles. */
 export const ADMIN_EXTRA_PATHS = ['/billing', '/predictive-ai'] as const
 
-export const ACCOUNTANT_HOME_PATH = '/list'
+export const ACCOUNTANT_HOME_PATH = '/details?view=table'
 
 const ROLE_CODES: RoleCode[] = [
   'platform_admin',

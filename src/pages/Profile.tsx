@@ -22,18 +22,18 @@ export default function Profile({ embedded }: ProfileProps) {
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState('')
   const [form, setForm] = useState({
-    f_name: user?.f_name ?? '',
-    l_name: user?.l_name ?? '',
-    email: user?.email ?? '',
-    mobile: user?.mobile ?? '',
+    f_name: String(user?.f_name ?? ''),
+    l_name: String(user?.l_name ?? ''),
+    email: String(user?.email ?? ''),
+    mobile: String(user?.mobile ?? ''),
   })
 
   const openEdit = () => {
     setForm({
-      f_name: user?.f_name ?? '',
-      l_name: user?.l_name ?? '',
-      email: user?.email ?? '',
-      mobile: user?.mobile ?? '',
+      f_name: String(user?.f_name ?? ''),
+      l_name: String(user?.l_name ?? ''),
+      email: String(user?.email ?? ''),
+      mobile: String(user?.mobile ?? ''),
     })
     setMessage('')
     setEditOpen(true)
@@ -48,20 +48,20 @@ export default function Profile({ embedded }: ProfileProps) {
     setSubmitting(true)
     setMessage('')
     updateProfile({
-      f_name: form.f_name.trim(),
-      l_name: form.l_name.trim(),
-      email: form.email.trim(),
-      mobile: form.mobile.trim(),
+      f_name: String(form.f_name ?? '').trim(),
+      l_name: String(form.l_name ?? '').trim(),
+      email: String(form.email ?? '').trim(),
+      mobile: String(form.mobile ?? '').trim(),
     })
       .then((r) => {
         if (r.success) {
           // Update UI immediately with the values we just saved (API /me may still return JWT-cached data)
           const savedUser = user ? {
             ...user,
-            f_name: form.f_name.trim(),
-            l_name: form.l_name.trim(),
-            email: form.email.trim(),
-            mobile: form.mobile.trim(),
+            f_name: String(form.f_name ?? '').trim(),
+            l_name: String(form.l_name ?? '').trim(),
+            email: String(form.email ?? '').trim(),
+            mobile: String(form.mobile ?? '').trim(),
           } : null
           if (savedUser) setUser(savedUser)
           setEditOpen(false)
@@ -70,7 +70,9 @@ export default function Profile({ embedded }: ProfileProps) {
             const updated = (res as { user?: typeof user }).user ?? (res as { data?: { user?: typeof user } }).data?.user
             if (res.success && updated) setUser(updated)
           }).catch(() => {})
+          return
         }
+
         const err = r as { message?: string; details?: string; error?: string }
         const text = err.details || err.error || err.message || t('profile.updateFailed')
         const isExpired = /expired|TokenExpiredError|jwt expired/i.test(text)
@@ -106,10 +108,10 @@ export default function Profile({ embedded }: ProfileProps) {
     setEditOpen(false)
     setMessage('')
     setForm({
-      f_name: user?.f_name ?? '',
-      l_name: user?.l_name ?? '',
-      email: user?.email ?? '',
-      mobile: user?.mobile ?? '',
+      f_name: String(user?.f_name ?? ''),
+      l_name: String(user?.l_name ?? ''),
+      email: String(user?.email ?? ''),
+      mobile: String(user?.mobile ?? ''),
     })
   }
 
