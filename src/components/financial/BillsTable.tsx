@@ -99,14 +99,33 @@ export function exportBillsCsv(rows: FinancialBillRow[], filename: string) {
     FINANCIAL_BILL_KEYS.net,
     FINANCIAL_BILL_KEYS.customer,
   ]
+
+  // Columns that hold ISO 8601 date strings from the API and must be
+  // rendered as 24-hour local time in the CSV so the file matches what
+  // the user sees on screen (no AM/PM, no raw ISO).
+  const DATE_COLUMNS: string[] = [
+    FINANCIAL_BILL_KEYS.issueDate,
+    FINANCIAL_BILL_KEYS.sessionDate,
+  ]
+
+  // U+200E LEFT-TO-RIGHT MARK forces spreadsheet apps (WPS / Excel) running
+  // under an Arabic locale to render this cell LTR. Without it, the digit-first
+  // string "23/05/2026 08:24" gets visually reversed to "08:24 23/05/2026" while
+  // the underlying value stays the same. LRM is invisible and does not affect
+  // CSV parsing, Excel formulas, or sort order.
+  const LRM = '\u200E'
+
   const lines = [
     headers.map(escapeCsvCell).join(','),
     ...rows.map((row) =>
       headers
         .map((h) => {
           const raw = row[h]
-          const s = raw == null ? '' : String(raw)
-          return escapeCsvCell(s)
+          if (raw == null) return escapeCsvCell('')
+          const formatted = DATE_COLUMNS.includes(h)
+            ? `${LRM}${formatDateTime24(raw)}`
+            : String(raw)
+          return escapeCsvCell(formatted)
         })
         .join(','),
     ),

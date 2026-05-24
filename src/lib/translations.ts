@@ -542,8 +542,34 @@ const messages: Record<string, { en: string; ar: string }> = {
   'common.copy': { en: 'Copy', ar: 'نسخ' },
   'common.datePlaceholder': { en: 'DD/MM/YYYY', ar: 'DD/MM/YYYY' },
 
+  // Login page
+  'login.title': { en: 'Welcome back', ar: 'مرحباً بعودتك' },
+  'login.welcomeBack': { en: 'Welcome back', ar: 'مرحباً بعودتك' },
+  'login.subtitle': {
+    en: 'Sign in to your account',
+    ar: 'سجّل الدخول إلى حسابك',
+  },
+  'login.identifier': { en: 'Email or Mobile', ar: 'البريد الإلكتروني أو الجوال' },
+  'login.password': { en: 'Password', ar: 'كلمة المرور' },
+  'login.signIn': { en: 'Sign in', ar: 'تسجيل الدخول' },
+  'login.signingIn': { en: 'Signing in...', ar: 'جارٍ تسجيل الدخول...' },
+  'login.tagline': {
+    en: 'ION Electric Vehicle Charging Systems',
+    ar: 'أيون لأنظمة شحن المركبات الكهربائية',
+  },
+  'login.showPassword': { en: 'Show password', ar: 'إظهار كلمة المرور' },
+  'login.hidePassword': { en: 'Hide password', ar: 'إخفاء كلمة المرور' },
+  'login.placeholderIdentifier': {
+    en: 'email@example.com or 07xxxxxxxx',
+    ar: 'email@example.com أو 07xxxxxxxx',
+  },
+
   // Login errors (match API messages for mapping)
   'login.placeholderPassword': { en: 'Enter your Password', ar: 'أدخل كلمة المرور' },
+  'login.errorInvalidCredentials': {
+    en: 'Incorrect email/mobile or password',
+    ar: 'البريد الإلكتروني/الجوال أو كلمة المرور غير صحيحة',
+  },
   'login.errorInvalidEmail': { en: 'Invalid email or user not found', ar: 'البريد الإلكتروني غير صحيح أو المستخدم غير موجود' },
   'login.errorWrongPassword': { en: 'Wrong password', ar: 'كلمة المرور غير صحيحة' },
   'login.errorGeneric': { en: 'Login failed', ar: 'فشل تسجيل الدخول' },
