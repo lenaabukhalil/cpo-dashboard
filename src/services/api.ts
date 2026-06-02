@@ -927,7 +927,7 @@ export async function deletePeriodicMaintenance(id: string) {
   })
 }
 
-/** إنشاء تذكرة صيانة من الجدول الدوري الآن وتحديث last_run_at و next_due_at (query: action=run&id=) */
+/** Create a maintenance ticket from the periodic schedule now and update last_run_at and next_due_at (query: action=run&id=). */
 export async function runPeriodicMaintenance(id: string) {
   return request<{ data: { ticket_id: string } }>('/api/v4/support/periodic-maintenance', {
     method: 'POST',
