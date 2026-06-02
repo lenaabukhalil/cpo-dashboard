@@ -3,7 +3,7 @@ import { Card, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
-import { Download } from 'lucide-react'
+import { Download, Link2 } from 'lucide-react'
 import {
   downloadChargerComparisonPdf,
   downloadConnectorComparisonPdf,
@@ -84,6 +84,7 @@ export default function Reports() {
   const [chargerBId, setChargerBId] = useState('')
   const [startB, setStartB] = useState('')
   const [endB, setEndB] = useState('')
+  const [chargerDatesLinked, setChargerDatesLinked] = useState(true)
   const [chargersForA, setChargersForA] = useState<Charger[]>([])
   const [chargersForB, setChargersForB] = useState<Charger[]>([])
   const [compareChargerA, setCompareChargerA] = useState<ChargerComparisonRow | null>(null)
@@ -102,6 +103,7 @@ export default function Reports() {
   const [connectorBId, setConnectorBId] = useState('')
   const [connectorStartB, setConnectorStartB] = useState('')
   const [connectorEndB, setConnectorEndB] = useState('')
+  const [connectorDatesLinked, setConnectorDatesLinked] = useState(true)
   const [connectorsForA, setConnectorsForA] = useState<Connector[]>([])
   const [connectorsForB, setConnectorsForB] = useState<Connector[]>([])
   const [chargersForConnectorA, setChargersForConnectorA] = useState<Charger[]>([])
@@ -351,11 +353,31 @@ export default function Reports() {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">{t('reports.startDate')}</Label>
-                      <Input type="date" value={startA} onChange={(e) => setStartA(e.target.value)} placeholder={t('common.datePlaceholder')} className="w-full bg-background" />
+                      <Input
+                        type="date"
+                        value={startA}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          setStartA(v)
+                          if (chargerDatesLinked) setStartB(v)
+                        }}
+                        placeholder={t('common.datePlaceholder')}
+                        className="w-full bg-background"
+                      />
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">{t('reports.endDate')}</Label>
-                      <Input type="date" value={endA} onChange={(e) => setEndA(e.target.value)} placeholder={t('common.datePlaceholder')} className="w-full bg-background" />
+                      <Input
+                        type="date"
+                        value={endA}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          setEndA(v)
+                          if (chargerDatesLinked) setEndB(v)
+                        }}
+                        placeholder={t('common.datePlaceholder')}
+                        className="w-full bg-background"
+                      />
                     </div>
                   </div>
                 </div>
@@ -373,14 +395,56 @@ export default function Reports() {
                     <Label className="text-xs text-muted-foreground">{t('list.charger')}</Label>
                     <AppSelect options={[{ value: '', label: t('reports.selectCharger') }, ...chargersForB.map((c) => ({ value: String(c.id), label: c.name }))]} value={chargerBId} onChange={setChargerBId} placeholder={t('reports.selectCharger')} className="w-full bg-background" />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">{t('reports.startDate')}</Label>
-                      <Input type="date" value={startB} onChange={(e) => setStartB(e.target.value)} placeholder={t('common.datePlaceholder')} className="w-full bg-background" />
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs text-muted-foreground">{t('reports.dateRange')}</Label>
+                      {chargerDatesLinked ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                          <Link2 className="h-3 w-3" aria-hidden />
+                          {t('reports.linkedToA')}
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStartB(startA)
+                            setEndB(endA)
+                            setChargerDatesLinked(true)
+                          }}
+                          className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+                        >
+                          <Link2 className="h-3 w-3" aria-hidden />
+                          {t('reports.relinkToA')}
+                        </button>
+                      )}
                     </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">{t('reports.endDate')}</Label>
-                      <Input type="date" value={endB} onChange={(e) => setEndB(e.target.value)} placeholder={t('common.datePlaceholder')} className="w-full bg-background" />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">{t('reports.startDate')}</Label>
+                        <Input
+                          type="date"
+                          value={startB}
+                          onChange={(e) => {
+                            setStartB(e.target.value)
+                            if (chargerDatesLinked) setChargerDatesLinked(false)
+                          }}
+                          placeholder={t('common.datePlaceholder')}
+                          className="w-full bg-background"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">{t('reports.endDate')}</Label>
+                        <Input
+                          type="date"
+                          value={endB}
+                          onChange={(e) => {
+                            setEndB(e.target.value)
+                            if (chargerDatesLinked) setChargerDatesLinked(false)
+                          }}
+                          placeholder={t('common.datePlaceholder')}
+                          className="w-full bg-background"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -519,11 +583,31 @@ export default function Reports() {
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">{t('reports.startDate')}</Label>
-                        <Input type="date" value={connectorStartA} onChange={(e) => setConnectorStartA(e.target.value)} placeholder={t('common.datePlaceholder')} className="w-full bg-background" />
+                        <Input
+                          type="date"
+                          value={connectorStartA}
+                          onChange={(e) => {
+                            const v = e.target.value
+                            setConnectorStartA(v)
+                            if (connectorDatesLinked) setConnectorStartB(v)
+                          }}
+                          placeholder={t('common.datePlaceholder')}
+                          className="w-full bg-background"
+                        />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">{t('reports.endDate')}</Label>
-                        <Input type="date" value={connectorEndA} onChange={(e) => setConnectorEndA(e.target.value)} placeholder={t('common.datePlaceholder')} className="w-full bg-background" />
+                        <Input
+                          type="date"
+                          value={connectorEndA}
+                          onChange={(e) => {
+                            const v = e.target.value
+                            setConnectorEndA(v)
+                            if (connectorDatesLinked) setConnectorEndB(v)
+                          }}
+                          placeholder={t('common.datePlaceholder')}
+                          className="w-full bg-background"
+                        />
                       </div>
                     </div>
                   </div>
@@ -545,14 +629,56 @@ export default function Reports() {
                       <Label className="text-xs text-muted-foreground">{t('details.connectorLabel')}</Label>
                       <AppSelect options={[{ value: '', label: t('reports.selectConnector') }, ...connectorsForB.map((c) => ({ value: String(c.id), label: `${c.type ?? c.connector_type ?? c.id}` }))]} value={connectorBId} onChange={setConnectorBId} placeholder={t('reports.selectConnector')} className="w-full bg-background" />
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">{t('reports.startDate')}</Label>
-                        <Input type="date" value={connectorStartB} onChange={(e) => setConnectorStartB(e.target.value)} placeholder={t('common.datePlaceholder')} className="w-full bg-background" />
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs text-muted-foreground">{t('reports.dateRange')}</Label>
+                        {connectorDatesLinked ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                            <Link2 className="h-3 w-3" aria-hidden />
+                            {t('reports.linkedToA')}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setConnectorStartB(connectorStartA)
+                              setConnectorEndB(connectorEndA)
+                              setConnectorDatesLinked(true)
+                            }}
+                            className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+                          >
+                            <Link2 className="h-3 w-3" aria-hidden />
+                            {t('reports.relinkToA')}
+                          </button>
+                        )}
                       </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">{t('reports.endDate')}</Label>
-                        <Input type="date" value={connectorEndB} onChange={(e) => setConnectorEndB(e.target.value)} placeholder={t('common.datePlaceholder')} className="w-full bg-background" />
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-muted-foreground">{t('reports.startDate')}</Label>
+                          <Input
+                            type="date"
+                            value={connectorStartB}
+                            onChange={(e) => {
+                              setConnectorStartB(e.target.value)
+                              if (connectorDatesLinked) setConnectorDatesLinked(false)
+                            }}
+                            placeholder={t('common.datePlaceholder')}
+                            className="w-full bg-background"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-muted-foreground">{t('reports.endDate')}</Label>
+                          <Input
+                            type="date"
+                            value={connectorEndB}
+                            onChange={(e) => {
+                              setConnectorEndB(e.target.value)
+                              if (connectorDatesLinked) setConnectorDatesLinked(false)
+                            }}
+                            placeholder={t('common.datePlaceholder')}
+                            className="w-full bg-background"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>

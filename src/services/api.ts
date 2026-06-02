@@ -549,8 +549,12 @@ export async function updateOrg(id: number, body: Partial<Pick<Org, 'name' | 'na
 }
 
 // Locations
-export async function getLocations(organizationId: number) {
-  return request<Location[]>('/api/v4/location', { params: { organizationId: String(organizationId) } })
+export async function getLocations(organizationId: number, targetOrgId?: string) {
+  const params: Record<string, string> = {
+    organizationId: String(organizationId),
+  }
+  if (targetOrgId) params.targetOrgId = targetOrgId
+  return request<Location[]>('/api/v4/location', { params })
 }
 
 export async function getLocation(id: number) {

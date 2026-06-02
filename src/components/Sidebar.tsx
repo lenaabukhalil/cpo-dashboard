@@ -198,31 +198,33 @@ export default function Sidebar({ open: _open = true, onOpenChange, side = 'left
           })}
         </div>
 
-        <div className="mt-auto border-t border-gray-200 pt-4 mt-4 px-4 pb-5">
-          <div className="cursor-pointer transition-colors duration-150 hover:text-gray-600">
-            <div className="flex items-center gap-3">
-              <img
-                src="/favicon.png"
-                alt="App icon"
-                className="w-8 h-8 object-contain shrink-0 rounded-md"
-                onError={(e) => {
-                  ;(e.currentTarget as HTMLImageElement).style.display = 'none'
-                }}
-              />
-              <div className="flex flex-col">
-                <span className="text-sm text-gray-500">Powered by: ION</span>
-                <span className="text-xs text-gray-400">Electric Vehicle Charging Systems</span>
-              </div>
+        <div className="mt-auto border-t border-border px-4 py-5">
+          <div className="flex items-center gap-3">
+            <img
+              src="/favicon.png"
+              alt=""
+              className="h-7 w-7 shrink-0 object-contain"
+              onError={(e) => {
+                ;(e.currentTarget as HTMLImageElement).style.display = 'none'
+              }}
+            />
+            <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+              <p className="text-sm font-medium text-foreground/80 leading-tight">
+                {t('sidebar.poweredBy')}: ION
+              </p>
+              <p className="text-xs font-normal text-muted-foreground leading-tight whitespace-nowrap">
+                EV Charging Systems
+              </p>
             </div>
-
-            {mobile ? (
-              <div className="pt-3">
-                <Button variant="ghost" className="w-full justify-center" onClick={() => onOpenChange?.(false)}>
-                  Close
-                </Button>
-              </div>
-            ) : null}
           </div>
+
+          {mobile ? (
+            <div className="pt-3">
+              <Button variant="ghost" className="w-full justify-center" onClick={() => onOpenChange?.(false)}>
+                {t('common.close')}
+              </Button>
+            </div>
+          ) : null}
         </div>
 
         {orgId != null && canEditOrganization ? (

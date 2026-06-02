@@ -21,6 +21,7 @@ import {
   Building2,
 } from 'lucide-react'
 import { useAccessibleOrgs } from '../../hooks/useAccessibleOrgs'
+import { OrgSelector } from '../../components/shared/OrgSelector'
 import { cn } from '../../lib/utils'
 
 interface WizardViewProps {
@@ -60,9 +61,17 @@ function StatusBadge({ status, className }: { status: string; className?: string
 
 export default function WizardView({ embedded }: WizardViewProps) {
   const { t } = useTranslation()
-  const { selectedOrg, ownOrg, loading: orgsLoading, getTargetOrgIdParam } = useAccessibleOrgs()
+  const {
+    orgs,
+    selectedOrg,
+    ownOrg,
+    selectedOrgPK,
+    setSelectedOrgPK,
+    hasGrants,
+    loading: orgsLoading,
+    getTargetOrgIdParam,
+  } = useAccessibleOrgs()
   const [locations, setLocations] = useState<LocationWithChargers[]>([])
-  const [orgName, setOrgName] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [wizardStep, setWizardStep] = useState(0)
@@ -74,10 +83,6 @@ export default function WizardView({ embedded }: WizardViewProps) {
   const [connectorTariffCounts, setConnectorTariffCounts] = useState<Record<number, number>>({})
 
   useEffect(() => {
-    setOrgName(selectedOrg?.name ?? ownOrg?.name ?? '')
-  }, [selectedOrg?.name, ownOrg?.name])
-
-  useEffect(() => {
     const bizId = selectedOrg?.biz_id ?? ownOrg?.biz_id
     if (!bizId || orgsLoading) {
       if (!orgsLoading && !bizId) {
@@ -87,14 +92,27 @@ export default function WizardView({ embedded }: WizardViewProps) {
       return
     }
 
+    setWizardStep(0)
+    setWizardLocation(null)
+    setWizardCharger(null)
+    setWizardConnector(null)
+
     setLoading(true)
     setError('')
 
-    const loadLocations = getLocations(bizId).then((locRes) => {
+    const targetOrgId = getTargetOrgIdParam()
+    const loadLocations = getLocations(bizId, targetOrgId).then((locRes) => {
       if (!locRes.success || !locRes.data) return [] as LocationWithChargers[]
       const locList = Array.isArray(locRes.data) ? locRes.data : []
+      const org = orgs.find((o) => o.id === selectedOrgPK) ?? ownOrg
+      const filteredLocList = org
+        ? locList.filter((loc) => {
+            const oid = Number(loc.organization_id)
+            return oid === org.biz_id || oid === org.id
+          })
+        : locList
       return Promise.all(
-        locList.map((loc: LocationType) =>
+        filteredLocList.map((loc: LocationType) =>
           getChargers(loc.location_id).then((chRes) => {
             const chList = (chRes as { data?: Charger[] }).data ?? []
             const chargers = Array.isArray(chList) ? chList : []
@@ -149,7 +167,7 @@ export default function WizardView({ embedded }: WizardViewProps) {
       })
       .catch(() => setError(t('details.loadFailed')))
       .finally(() => setLoading(false))
-  }, [selectedOrg?.biz_id, ownOrg?.biz_id, orgsLoading, selectedOrg?.id, getTargetOrgIdParam, t])
+  }, [selectedOrg?.biz_id, ownOrg?.biz_id, orgsLoading, selectedOrgPK, orgs, ownOrg, getTargetOrgIdParam, t])
 
   // Load tariff counts per connector when on step 2 (connector selection)
   useEffect(() => {
@@ -235,17 +253,21 @@ export default function WizardView({ embedded }: WizardViewProps) {
         {!embedded && (
           <h1 className="text-2xl font-bold tracking-tight text-foreground">{t('details.title')}</h1>
         )}
-        {orgName && (
-          <p className="text-base font-semibold text-primary">
-            {orgName}
-          </p>
-        )}
         {!embedded && (
           <p className="text-sm text-muted-foreground leading-relaxed">
             {t('details.browse')}
           </p>
         )}
       </div>
+
+      {hasGrants ? (
+        <OrgSelector
+          orgs={orgs}
+          value={selectedOrgPK}
+          onChange={setSelectedOrgPK}
+          loading={orgsLoading}
+        />
+      ) : null}
 
       {/* Summary strip */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

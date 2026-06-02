@@ -251,12 +251,18 @@ export default function Sessions() {
 
     if (locationsBizId != null) {
       setDetailsLoading(true)
-      getLocations(locationsBizId)
+      getLocations(locationsBizId, targetOrgId)
         .then((locRes) => {
           if (cancelled || !locRes.success || !locRes.data) return [] as LocationWithChargers[]
-          const locList = Array.isArray(locRes.data) ? locRes.data : []
+          const allLocs = Array.isArray(locRes.data) ? locRes.data : []
+          const filteredLocs = org
+            ? allLocs.filter((loc) => {
+                const oid = Number(loc.organization_id)
+                return oid === org.biz_id || oid === org.id
+              })
+            : allLocs
           return Promise.all(
-            locList.map((loc: LocationType) =>
+            filteredLocs.map((loc: LocationType) =>
               getChargers(loc.location_id).then((chRes) => {
                 if (cancelled) return { ...loc, chargers: [] as ChargerWithConns[] }
                 const chList = (chRes as { data?: Charger[] }).data ?? []

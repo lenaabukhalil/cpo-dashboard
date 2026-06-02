@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Search } from 'lucide-react'
 import { useAccessibleOrgs, getLocationsBizId } from '../../hooks/useAccessibleOrgs'
+import { OrgSelector } from '../../components/shared/OrgSelector'
 import { useTranslation } from '../../context/LanguageContext'
 import {
   getLocations,
@@ -244,7 +245,16 @@ interface TariffRow {
 const PER_PAGE_DEFAULT = 10
 
 export default function TableView({ embedded }: TableViewProps) {
-  const { selectedOrg, ownOrg, loading: orgsLoading } = useAccessibleOrgs()
+  const {
+    orgs,
+    selectedOrg,
+    ownOrg,
+    selectedOrgPK,
+    setSelectedOrgPK,
+    hasGrants,
+    loading: orgsLoading,
+    getTargetOrgIdParam,
+  } = useAccessibleOrgs()
   const bizId = getLocationsBizId(selectedOrg, ownOrg) ?? null
   const { t } = useTranslation()
   const tabs = useListTabs()
@@ -280,15 +290,23 @@ export default function TableView({ embedded }: TableViewProps) {
       return
     }
     setLoading(true)
-    getLocations(bizId)
+    const targetOrgId = getTargetOrgIdParam()
+    getLocations(bizId, targetOrgId)
       .then((r) => {
         if (!r.success || !r.data) return []
         return Array.isArray(r.data) ? r.data : []
       })
       .then((locList) => {
-        setLocations(locList)
+        const org = orgs.find((o) => o.id === selectedOrgPK) ?? ownOrg
+        const filteredLocList = org
+          ? locList.filter((loc) => {
+              const oid = Number(loc.organization_id)
+              return oid === org.biz_id || oid === org.id
+            })
+          : locList
+        setLocations(filteredLocList)
         return Promise.all(
-          locList.map((loc: LocationType) =>
+          filteredLocList.map((loc: LocationType) =>
             getChargers(loc.location_id).then((chRes) => {
               const chList = (chRes as { data?: Charger[] }).data ?? []
               const arr = Array.isArray(chList) ? chList : []
@@ -317,12 +335,12 @@ export default function TableView({ embedded }: TableViewProps) {
                 setConnectorsStatusSummary(null)
               }
               setChargerStatusByChargerId(buildChargerStatusByChargerId(statusList))
-              return { locList, statusList }
+              return { locList: filteredLocList, statusList }
             })
             .catch(() => {
               setChargerStatusByChargerId({})
               setConnectorsStatusSummary(null)
-              return { locList, statusList: [] as ConnectorStatusRow[] }
+              return { locList: filteredLocList, statusList: [] as ConnectorStatusRow[] }
             })
         })
       })
@@ -376,7 +394,7 @@ export default function TableView({ embedded }: TableViewProps) {
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [bizId, orgsLoading, selectedOrg?.id])
+  }, [bizId, orgsLoading, selectedOrgPK, orgs, ownOrg, getTargetOrgIdParam])
 
   const filteredLocations = useMemo(() => {
     if (!search.trim()) return locations
@@ -507,6 +525,14 @@ export default function TableView({ embedded }: TableViewProps) {
 
   return (
     <div className="space-y-6 text-start">
+      {hasGrants ? (
+        <OrgSelector
+          orgs={orgs}
+          value={selectedOrgPK}
+          onChange={setSelectedOrgPK}
+          loading={orgsLoading}
+        />
+      ) : null}
       <div>
         {!embedded && (
           <>

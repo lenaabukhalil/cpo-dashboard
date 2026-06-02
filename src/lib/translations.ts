@@ -81,6 +81,7 @@ const messages: Record<string, { en: string; ar: string }> = {
   'header.refresh': { en: 'Refresh', ar: 'إعادة تحميل' },
   'sidebar.cpoDashboard': { en: 'CPO Dashboard', ar: 'لوحة CPO' },
   'sidebar.evCharging': { en: 'EV Charging', ar: 'شحن السيارات الكهربائية' },
+  'sidebar.poweredBy': { en: 'Powered by', ar: 'مدعوم من' },
 
   // Dashboard
   'dashboard.title': { en: 'Dashboard', ar: 'لوحة التحكم' },
@@ -834,6 +835,9 @@ const messages: Record<string, { en: string; ar: string }> = {
   'reports.selectConnector': { en: 'Select connector', ar: 'اختر الموصل' },
   'reports.startDate': { en: 'Start date', ar: 'تاريخ البداية' },
   'reports.endDate': { en: 'End date', ar: 'تاريخ النهاية' },
+  'reports.dateRange': { en: 'Date range', ar: 'النطاق الزمني' },
+  'reports.linkedToA': { en: 'Linked to A', ar: 'مرتبط بـ أ' },
+  'reports.relinkToA': { en: 'Link to A', ar: 'ربط بـ أ' },
   'reports.compareAB': { en: 'Compare A vs B', ar: 'مقارنة أ مقابل ب' },
   'reports.comparison.downloadPdf': { en: 'Download PDF', ar: 'تحميل PDF' },
   'reports.comparison.downloadingPdf': { en: 'Downloading...', ar: 'جارٍ التحميل...' },
