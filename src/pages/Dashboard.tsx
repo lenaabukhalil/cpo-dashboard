@@ -31,6 +31,7 @@ import {
 
 export default function Dashboard() {
   const { user } = useAuth()
+  const { t } = useTranslation()
   const {
     orgs,
     selectedOrgPK,
@@ -148,7 +149,6 @@ export default function Dashboard() {
       ? connectorsSummary.availableCount
       : connectorsList.filter((r) => (r.status ?? '').toLowerCase() === 'available').length
 
-  const { t } = useTranslation()
   if (!user) return null
 
   return (

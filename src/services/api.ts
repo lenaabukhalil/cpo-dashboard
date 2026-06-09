@@ -1,4 +1,5 @@
 import type { AccessibleOrg, OrgAccessType } from '../types/org'
+import { handleSessionExpired } from '../lib/sessionExpired'
 
 const BASE = import.meta.env.VITE_API_URL || ''
 
@@ -152,10 +153,7 @@ export async function request<T>(
         return request<T>(path, { ...opts, _retried: true } as typeof opts)
       }
       clearGetCache()
-      localStorage.removeItem('cpo_token')
-      localStorage.removeItem('cpo_permissions')
-      localStorage.removeItem('cpo_user')
-      window.location.href = '/login'
+      handleSessionExpired()
     }
     return {
       ...json,

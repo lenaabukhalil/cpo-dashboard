@@ -513,6 +513,8 @@ export default function TableView({ embedded }: TableViewProps) {
     setSearch('')
   }
 
+  const tabsWithLabels = useMemo(() => tabs.map((tab) => ({ id: tab.id, label: t(tab.labelKey) })), [tabs, t])
+
   if (!orgsLoading && bizId == null) {
     return (
       <div className="space-y-6">
@@ -520,8 +522,6 @@ export default function TableView({ embedded }: TableViewProps) {
       </div>
     )
   }
-
-  const tabsWithLabels = useMemo(() => tabs.map((tab) => ({ id: tab.id, label: t(tab.labelKey) })), [tabs, t])
 
   return (
     <div className="space-y-6 text-start">

@@ -1,5 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { useTranslation } from './context/LanguageContext'
+import ErrorBoundary from './components/ErrorBoundary'
 import { getRole } from './lib/permissions'
 import { getDefaultHomePath } from './config/sidebar'
 import Layout from './components/Layout'
@@ -84,12 +86,27 @@ function AppRoutes() {
   )
 }
 
+function AppShell() {
+  const { t } = useTranslation()
+  return (
+    <ErrorBoundary
+      labels={{
+        title: t('errors.boundaryTitle'),
+        message: t('errors.boundaryMessage'),
+        retry: t('errors.boundaryRetry'),
+      }}
+    >
+      <AppRoutes />
+    </ErrorBoundary>
+  )
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <NotificationProvider>
         <ToastProvider>
-          <AppRoutes />
+          <AppShell />
         </ToastProvider>
       </NotificationProvider>
     </AuthProvider>

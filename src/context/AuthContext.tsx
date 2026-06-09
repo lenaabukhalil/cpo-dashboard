@@ -3,6 +3,11 @@ import type { AuthUser, PermissionMap, PermissionValue } from '../services/api'
 import { me } from '../services/api'
 import { clearSelectedOrgPk } from '../hooks/useAccessibleOrgs'
 import { startTokenRefresh, stopTokenRefresh } from '../lib/tokenRefresh'
+import {
+  CPO_SESSION_EXPIRED_EVENT,
+  handleSessionExpired,
+  resetSessionExpiredGuard,
+} from '../lib/sessionExpired'
 
 const CPO_PERMISSIONS_KEY = 'cpo_permissions'
 const CPO_USER_KEY = 'cpo_user'
@@ -72,6 +77,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  const syncSessionCleared = useCallback(() => {
+    stopTokenRefresh()
+    clearSelectedOrgPk()
+    setUserState(null)
+    setPermissions({})
+  }, [])
+
   const beginRefreshLoop = useCallback(() => {
     stopTokenRefresh()
     startTokenRefresh(
@@ -85,12 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       },
       () => {
-        localStorage.removeItem('cpo_token')
-        localStorage.removeItem(CPO_USER_KEY)
-        localStorage.removeItem(CPO_PERMISSIONS_KEY)
-        setUserState(null)
-        setPermissions({})
-        stopTokenRefresh()
+        handleSessionExpired()
       },
     )
   }, [setUser])
@@ -109,6 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         return
       }
+      resetSessionExpiredGuard()
       const next = perms ?? {}
       setUser(u)
       setPermissions(next)
@@ -122,6 +130,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     },
     [beginRefreshLoop, setUser],
   )
+
+  useEffect(() => {
+    const onSessionExpired = () => syncSessionCleared()
+    window.addEventListener(CPO_SESSION_EXPIRED_EVENT, onSessionExpired)
+    return () => window.removeEventListener(CPO_SESSION_EXPIRED_EVENT, onSessionExpired)
+  }, [syncSessionCleared])
 
   useEffect(() => {
     const token = localStorage.getItem('cpo_token')
@@ -165,16 +179,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             /* ignore */
           }
           beginRefreshLoop()
-          return
-        }
-        if (r.statusCode === 401) {
-          localStorage.removeItem('cpo_token')
-          localStorage.removeItem(CPO_USER_KEY)
-          localStorage.removeItem(CPO_PERMISSIONS_KEY)
-          setUserState(null)
-          setPermissions({})
-          stopTokenRefresh()
-          window.location.href = '/login'
         }
       })
       .catch(() => {

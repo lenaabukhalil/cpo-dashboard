@@ -591,6 +591,12 @@ const messages: Record<string, { en: string; ar: string }> = {
     en: "You don't have permission to do this.",
     ar: 'ليس لديك صلاحية لتنفيذ هذا الإجراء.',
   },
+  'errors.boundaryTitle': { en: 'Something went wrong', ar: 'حدث خطأ ما' },
+  'errors.boundaryMessage': {
+    en: 'This page ran into an unexpected error. You can try again or return to the dashboard.',
+    ar: 'واجهت هذه الصفحة خطأً غير متوقع. يمكنك المحاولة مرة أخرى أو العودة إلى لوحة التحكم.',
+  },
+  'errors.boundaryRetry': { en: 'Try again', ar: 'حاول مرة أخرى' },
 
   // Settings
   'settings.title': { en: 'Settings', ar: 'الإعدادات' },
