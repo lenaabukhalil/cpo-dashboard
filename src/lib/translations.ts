@@ -194,6 +194,7 @@ const messages: Record<string, { en: string; ar: string }> = {
   },
   'reports.financial.col.billId': { en: 'Bill ID', ar: 'رقم الفاتورة' },
   'reports.financial.col.issueDate': { en: 'Issue Date', ar: 'تاريخ الإصدار' },
+  'reports.financial.col.sessionDate': { en: 'Session Date', ar: 'تاريخ الجلسة' },
   'reports.financial.col.location': { en: 'Location', ar: 'الموقع' },
   'reports.financial.col.charger': { en: 'Charger', ar: 'الشاحن' },
   'reports.financial.col.connector': { en: 'Connector', ar: 'الموصل' },

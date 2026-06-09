@@ -5,7 +5,12 @@ import { Button } from '../ui/button'
 import { TablePagination } from '../TablePagination'
 import { FINANCIAL_BILL_KEYS, getBillField, type FinancialBillRow } from '../../api/financial'
 import { useTranslation } from '../../context/LanguageContext'
-import { formatDateTime24 } from '../../lib/dateFormat'
+import { formatDateTime24, type DateInput } from '../../lib/dateFormat'
+
+/** financial-bills API: true UTC ISO strings → local display (DD/MM/YYYY HH:mm). */
+function formatFinancialBillUtcDate(value: DateInput): string {
+  return formatDateTime24(value)
+}
 
 export type BillsSortKey =
   | 'billId'
@@ -89,6 +94,7 @@ export function exportBillsCsv(rows: FinancialBillRow[], filename: string) {
   const headers = [
     FINANCIAL_BILL_KEYS.billId,
     FINANCIAL_BILL_KEYS.issueDate,
+    FINANCIAL_BILL_KEYS.sessionDate,
     FINANCIAL_BILL_KEYS.location,
     FINANCIAL_BILL_KEYS.charger,
     FINANCIAL_BILL_KEYS.connector,
@@ -100,9 +106,7 @@ export function exportBillsCsv(rows: FinancialBillRow[], filename: string) {
     FINANCIAL_BILL_KEYS.customer,
   ]
 
-  // Columns that hold ISO 8601 date strings from the API and must be
-  // rendered as 24-hour local time in the CSV so the file matches what
-  // the user sees on screen (no AM/PM, no raw ISO).
+  // UTC ISO 8601 from API → local 24h display (matches on-screen table).
   const DATE_COLUMNS: string[] = [
     FINANCIAL_BILL_KEYS.issueDate,
     FINANCIAL_BILL_KEYS.sessionDate,
@@ -123,7 +127,7 @@ export function exportBillsCsv(rows: FinancialBillRow[], filename: string) {
           const raw = row[h]
           if (raw == null) return escapeCsvCell('')
           const formatted = DATE_COLUMNS.includes(h)
-            ? `${LRM}${formatDateTime24(raw)}`
+            ? `${LRM}${formatFinancialBillUtcDate(raw)}`
             : String(raw)
           return escapeCsvCell(formatted)
         })
@@ -206,6 +210,9 @@ export function BillsTable({
               <tr className="border-b border-border bg-muted/40">
                 {th('billId', t('reports.financial.col.billId'))}
                 {th('issueDate', t('reports.financial.col.issueDate'))}
+                <th className="py-2 px-3 font-semibold text-foreground whitespace-nowrap">
+                  {t('reports.financial.col.sessionDate')}
+                </th>
                 {th('location', t('reports.financial.col.location'))}
                 {th('charger', t('reports.financial.col.charger'))}
                 {th('connector', t('reports.financial.col.connector'))}
@@ -220,7 +227,7 @@ export function BillsTable({
             <tbody>
               {pageSlice.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={12} className="py-8 text-center text-muted-foreground">
                     {t('reports.noData')}
                   </td>
                 </tr>
@@ -228,7 +235,12 @@ export function BillsTable({
                 pageSlice.map((row, i) => (
                   <tr key={`${getBillField(row, 'billId')}-${i}`} className="border-b border-border last:border-0">
                     <td className="py-2 px-3 text-start">{cellNum(getBillField(row, 'billId'))}</td>
-                    <td className="py-2 px-3 text-start text-muted-foreground">{formatDateTime24(getBillField(row, 'issueDate'))}</td>
+                    <td className="py-2 px-3 text-start text-muted-foreground">
+                      {formatFinancialBillUtcDate(getBillField(row, 'issueDate'))}
+                    </td>
+                    <td className="py-2 px-3 text-start text-muted-foreground">
+                      {formatFinancialBillUtcDate(getBillField(row, 'sessionDate'))}
+                    </td>
                     <td className="py-2 px-3 text-start">{String(getBillField(row, 'location') ?? '—')}</td>
                     <td className="py-2 px-3 text-start">{String(getBillField(row, 'charger') ?? '—')}</td>
                     <td className="py-2 px-3 text-start">{String(getBillField(row, 'connector') ?? '—')}</td>
