@@ -6,6 +6,7 @@ import { TablePagination } from '../TablePagination'
 import { FINANCIAL_BILL_KEYS, getBillField, type FinancialBillRow } from '../../api/financial'
 import { useTranslation } from '../../context/LanguageContext'
 import { formatDateTime24, type DateInput } from '../../lib/dateFormat'
+import { formatEnergy, formatMoney, toNumberSafe } from '../../lib/numberFormat'
 
 /** financial-bills API: true UTC ISO strings → local display (DD/MM/YYYY HH:mm). */
 function formatFinancialBillUtcDate(value: DateInput): string {
@@ -45,26 +46,14 @@ export function billSortValue(row: FinancialBillRow, key: BillsSortKey): string 
       return String(getBillField(row, 'connector') ?? '').toLowerCase()
     case 'tariff':
       return String(getBillField(row, 'tariff') ?? '').toLowerCase()
-    case 'energy': {
-      const v = getBillField(row, 'energy')
-      const n = Number(v)
-      return Number.isFinite(n) ? n : 0
-    }
-    case 'amount': {
-      const v = getBillField(row, 'amount')
-      const n = Number(v)
-      return Number.isFinite(n) ? n : 0
-    }
-    case 'discount': {
-      const v = getBillField(row, 'discount')
-      const n = Number(v)
-      return Number.isFinite(n) ? n : 0
-    }
-    case 'net': {
-      const v = getBillField(row, 'net')
-      const n = Number(v)
-      return Number.isFinite(n) ? n : 0
-    }
+    case 'energy':
+      return toNumberSafe(getBillField(row, 'energy'))
+    case 'amount':
+      return toNumberSafe(getBillField(row, 'amount'))
+    case 'discount':
+      return toNumberSafe(getBillField(row, 'discount'))
+    case 'net':
+      return toNumberSafe(getBillField(row, 'net'))
     case 'customer':
       return String(getBillField(row, 'customer') ?? '').toLowerCase()
     default:
@@ -90,6 +79,24 @@ function escapeCsvCell(v: string): string {
   return v
 }
 
+function formatCsvCell(header: string, raw: string | number | null | undefined): string {
+  if (raw == null) return ''
+  if (header === FINANCIAL_BILL_KEYS.energy) return formatEnergy(raw)
+  if (
+    header === FINANCIAL_BILL_KEYS.amount ||
+    header === FINANCIAL_BILL_KEYS.discount ||
+    header === FINANCIAL_BILL_KEYS.net ||
+    header === FINANCIAL_BILL_KEYS.rate
+  ) {
+    return formatMoney(raw)
+  }
+  return String(raw)
+}
+
+function sumBillField(rows: FinancialBillRow[], key: keyof typeof FINANCIAL_BILL_KEYS): number {
+  return rows.reduce((sum, row) => sum + toNumberSafe(getBillField(row, key)), 0)
+}
+
 export function exportBillsCsv(rows: FinancialBillRow[], filename: string) {
   const headers = [
     FINANCIAL_BILL_KEYS.billId,
@@ -106,33 +113,37 @@ export function exportBillsCsv(rows: FinancialBillRow[], filename: string) {
     FINANCIAL_BILL_KEYS.customer,
   ]
 
-  // UTC ISO 8601 from API → local 24h display (matches on-screen table).
   const DATE_COLUMNS: string[] = [
     FINANCIAL_BILL_KEYS.issueDate,
     FINANCIAL_BILL_KEYS.sessionDate,
   ]
 
-  // U+200E LEFT-TO-RIGHT MARK forces spreadsheet apps (WPS / Excel) running
-  // under an Arabic locale to render this cell LTR. Without it, the digit-first
-  // string "23/05/2026 08:24" gets visually reversed to "08:24 23/05/2026" while
-  // the underlying value stays the same. LRM is invisible and does not affect
-  // CSV parsing, Excel formulas, or sort order.
   const LRM = '\u200E'
+
+  const formatRowCells = (row: FinancialBillRow): string[] =>
+    headers.map((h) => {
+      const raw = row[h]
+      if (raw == null) return ''
+      if (DATE_COLUMNS.includes(h)) return `${LRM}${formatFinancialBillUtcDate(raw)}`
+      return formatCsvCell(h, raw)
+    })
+
+  const totalEnergy = sumBillField(rows, 'energy')
+  const totalAmount = sumBillField(rows, 'amount')
+  const totalDiscount = sumBillField(rows, 'discount')
+  const totalNet = sumBillField(rows, 'net')
+
+  const totalsRow: Record<string, string> = Object.fromEntries(headers.map((h) => [h, '']))
+  totalsRow[FINANCIAL_BILL_KEYS.billId] = 'TOTAL'
+  totalsRow[FINANCIAL_BILL_KEYS.energy] = formatEnergy(totalEnergy)
+  totalsRow[FINANCIAL_BILL_KEYS.amount] = formatMoney(totalAmount)
+  totalsRow[FINANCIAL_BILL_KEYS.discount] = formatMoney(totalDiscount)
+  totalsRow[FINANCIAL_BILL_KEYS.net] = formatMoney(totalNet)
 
   const lines = [
     headers.map(escapeCsvCell).join(','),
-    ...rows.map((row) =>
-      headers
-        .map((h) => {
-          const raw = row[h]
-          if (raw == null) return escapeCsvCell('')
-          const formatted = DATE_COLUMNS.includes(h)
-            ? `${LRM}${formatFinancialBillUtcDate(raw)}`
-            : String(raw)
-          return escapeCsvCell(formatted)
-        })
-        .join(','),
-    ),
+    ...rows.map((row) => formatRowCells(row).map(escapeCsvCell).join(',')),
+    headers.map((h) => escapeCsvCell(totalsRow[h] ?? '')).join(','),
   ]
   const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
@@ -170,6 +181,17 @@ export function BillsTable({
   const sorted = useMemo(() => sortBillsRows(bills, sortKey, sortDir), [bills, sortKey, sortDir])
   const pagerTotal = sorted.length
 
+  const totals = useMemo(
+    () => ({
+      energy: sumBillField(bills, 'energy'),
+      amount: sumBillField(bills, 'amount'),
+      discount: sumBillField(bills, 'discount'),
+      net: sumBillField(bills, 'net'),
+      sessions: bills.length,
+    }),
+    [bills],
+  )
+
   const pageSlice = useMemo(
     () => sorted.slice((page - 1) * perPage, page * perPage),
     [sorted, page, perPage],
@@ -183,11 +205,6 @@ export function BillsTable({
       </button>
     </th>
   )
-
-  const cellMoney = (v: string | number | null | undefined) => {
-    const n = Number(v)
-    return Number.isFinite(n) ? n.toFixed(2) : '—'
-  }
 
   const cellNum = (v: string | number | null | undefined) => {
     const n = Number(v)
@@ -245,10 +262,18 @@ export function BillsTable({
                     <td className="py-2 px-3 text-start">{String(getBillField(row, 'charger') ?? '—')}</td>
                     <td className="py-2 px-3 text-start">{String(getBillField(row, 'connector') ?? '—')}</td>
                     <td className="py-2 px-3 text-start">{String(getBillField(row, 'tariff') ?? '—')}</td>
-                    <td className="py-2 px-3 text-end rtl:text-start tabular-nums">{cellMoney(getBillField(row, 'energy'))}</td>
-                    <td className="py-2 px-3 text-end rtl:text-start tabular-nums">{cellMoney(getBillField(row, 'amount'))}</td>
-                    <td className="py-2 px-3 text-end rtl:text-start tabular-nums">{cellMoney(getBillField(row, 'discount'))}</td>
-                    <td className="py-2 px-3 text-end rtl:text-start tabular-nums">{cellMoney(getBillField(row, 'net'))}</td>
+                    <td className="py-2 px-3 text-end rtl:text-start tabular-nums">
+                      {formatEnergy(getBillField(row, 'energy'))}
+                    </td>
+                    <td className="py-2 px-3 text-end rtl:text-start tabular-nums">
+                      {formatMoney(getBillField(row, 'amount'))}
+                    </td>
+                    <td className="py-2 px-3 text-end rtl:text-start tabular-nums">
+                      {formatMoney(getBillField(row, 'discount'))}
+                    </td>
+                    <td className="py-2 px-3 text-end rtl:text-start tabular-nums">
+                      {formatMoney(getBillField(row, 'net'))}
+                    </td>
                     <td className="py-2 px-3 text-start font-mono text-xs">{String(getBillField(row, 'customer') ?? '—')}</td>
                   </tr>
                 ))
@@ -256,6 +281,26 @@ export function BillsTable({
             </tbody>
           </table>
         </div>
+        {bills.length > 0 ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm">
+            <div>
+              <p className="text-xs text-muted-foreground">{t('reports.financial.kpi.revenue')}</p>
+              <p className="font-semibold tabular-nums text-foreground">
+                {formatMoney(totals.amount)} JOD
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">{t('reports.financial.kpi.energy')}</p>
+              <p className="font-semibold tabular-nums text-foreground">
+                {formatEnergy(totals.energy)} KWH
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">{t('reports.financial.kpi.sessions')}</p>
+              <p className="font-semibold tabular-nums text-foreground">{totals.sessions}</p>
+            </div>
+          </div>
+        ) : null}
         <TablePagination
           total={pagerTotal}
           page={page}
