@@ -936,6 +936,8 @@ export async function runPeriodicMaintenance(id: string) {
 // Dashboard (Operator)
 export interface DashboardStats {
   activeSessions?: number
+  activeNotCharging?: number
+  totalActive?: number
   utilization?: number
   chargersOnline?: number
   totalConnectors?: number

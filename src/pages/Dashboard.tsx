@@ -43,6 +43,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<{
     activeSessions?: number
+    activeNotCharging?: number
+    totalActive?: number
     chargersOnline?: number
     totalConnectors?: number
     busyConnectors?: number
@@ -191,9 +193,38 @@ export default function Dashboard() {
               {/* Live count from /api/v4/cpo/stats (active now); chart below is historical point-in-time — intentionally different. */}
               <p className="text-sm text-muted-foreground">{t('dashboard.activeSessions')}</p>
               {loading ? (
-                <div className="h-8 w-20 rounded bg-muted animate-pulse mt-1" />
+                <>
+                  <div className="h-8 w-20 rounded bg-muted animate-pulse mt-1" />
+                  <div className="mt-2 space-y-1">
+                    <div className="h-4 w-28 rounded bg-muted animate-pulse" />
+                    <div className="h-4 w-24 rounded bg-muted animate-pulse" />
+                  </div>
+                </>
               ) : (
-                <p className="text-2xl font-bold text-foreground">{stats?.activeSessions ?? 0}</p>
+                <>
+                  <p className="text-2xl font-bold text-foreground">
+                    {stats?.totalActive ??
+                      (stats?.activeSessions ?? 0) + (stats?.activeNotCharging ?? 0)}
+                  </p>
+                  <div className="mt-2 space-y-1 border-s border-border ps-3">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="text-muted-foreground">
+                        {t('dashboard.activeSessions.chargingNow')}
+                      </span>
+                      <span className="font-medium text-foreground tabular-nums">
+                        {stats?.activeSessions ?? 0}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="text-muted-foreground">
+                        {t('dashboard.activeSessions.notCharging')}
+                      </span>
+                      <span className="font-medium text-foreground tabular-nums">
+                        {stats?.activeNotCharging ?? 0}
+                      </span>
+                    </div>
+                  </div>
+                </>
               )}
             </div>
             <Zap className="h-8 w-8 text-amber-500 shrink-0" />

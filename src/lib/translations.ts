@@ -88,6 +88,8 @@ const messages: Record<string, { en: string; ar: string }> = {
   'dashboard.overviewFor': { en: 'Overview for', ar: 'نظرة عامة لـ' },
   'dashboard.quickActions': { en: 'Quick Actions', ar: 'إجراءات سريعة' },
   'dashboard.activeSessions': { en: 'Active Sessions', ar: 'الجلسات النشطة' },
+  'dashboard.activeSessions.chargingNow': { en: 'Charging', ar: 'يشحن' },
+  'dashboard.activeSessions.notCharging': { en: 'Not charging', ar: 'لا يشحن' },
   'dashboard.chargersOnline': { en: 'Chargers Online', ar: 'الشواحن متصلة' },
   'dashboard.connectors': { en: 'Connectors', ar: 'الموصلات' },
   'dashboard.availableTotal': { en: 'Available / Total', ar: 'متاح / الإجمالي' },
