@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { createPortal } from 'react-dom'
-import { FileText, Minus, Pencil, Plus, RefreshCw, Trash2, X, Copy, Check } from 'lucide-react'
+import { FileText, Minus, Pencil, Plus, RefreshCw, Trash2, X, Copy, Check, MessageSquare } from 'lucide-react'
 import { Button } from '../components/ui/button'
 import { Badge } from '../components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
@@ -91,6 +91,31 @@ function TicketPriorityBadge({ label, priority }: { label: string; priority: str
   )
 }
 
+/** Must match <thead> column count: Ticket ID, Title, Priority, Status, Team, Date, Charger, Actions */
+const TICKET_TABLE_COLUMN_COUNT = 8
+
+function AdminNoteCallout({
+  comment,
+  updatedAt,
+}: {
+  comment: string
+  updatedAt?: string | null
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <div className="rounded-lg border-s-4 border-s-primary bg-primary/5 px-3 py-2.5 space-y-1.5">
+      <p className="text-xs font-semibold text-foreground">{t('support.noteFromIonSupport')}</p>
+      <p className="text-sm text-foreground whitespace-pre-wrap break-words">{comment}</p>
+      {updatedAt ? (
+        <p className="text-xs text-muted-foreground">
+          {t('support.adminCommentUpdated')} {formatDateTime(updatedAt)}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
 export default function Support() {
   const { t } = useTranslation()
   const { user } = useAuth()
@@ -133,6 +158,7 @@ export default function Support() {
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [copiedTicketIds, setCopiedTicketIds] = useState<Record<string, true>>({})
+  const [expandedAdminNotes, setExpandedAdminNotes] = useState<Record<string, true>>({})
   const [editOpen, setEditOpen] = useState(false)
   const [editingTicket, setEditingTicket] = useState<MaintenanceTicket | null>(null)
   const [editForm, setEditForm] = useState({
@@ -201,6 +227,15 @@ export default function Support() {
           return next
         })
       }, 1500)
+    })
+  }
+
+  const toggleAdminNote = (id: string) => {
+    setExpandedAdminNotes((prev) => {
+      const next = { ...prev }
+      if (next[id]) delete next[id]
+      else next[id] = true
+      return next
     })
   }
 
@@ -358,78 +393,128 @@ export default function Support() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredTickets.map((ticket) => (
-                    <tr key={ticket.id} className="border-t border-border">
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono text-xs text-muted-foreground">{ticket.id}</span>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 shrink-0 p-0"
-                            onClick={() => copyTicketId(ticket.id)}
-                            aria-label={t('common.copy') || 'Copy'}
-                            title={t('common.copy') || 'Copy'}
-                          >
-                            {copiedTicketIds[ticket.id] ? (
-                              <Check className="h-3.5 w-3.5 text-green-600" aria-hidden />
-                            ) : (
-                              <Copy className="h-3.5 w-3.5" aria-hidden />
-                            )}
-                          </Button>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 font-medium text-foreground">{ticket.title}</td>
-                      <td className="py-3 px-4">
-                        <TicketPriorityBadge
-                          label={priorityLabelFor(ticket.priority)}
-                          priority={ticket.priority || ''}
-                        />
-                      </td>
-                      <td className="py-3 px-4">
-                        <TicketStatusBadge
-                          label={statusLabelFor(ticket.status)}
-                          status={ticket.status || ''}
-                        />
-                      </td>
-                      <td className="py-3 px-4 text-muted-foreground">{ticket.team ?? '—'}</td>
-                      <td className="py-3 px-4 text-muted-foreground">
-                        {formatDate(ticket.created_at)}
-                      </td>
-                      <td className="py-3 px-4 text-muted-foreground">
-                        {ticket.charger_id != null ? `${t('support.charger')} ${ticket.charger_id}` : '—'}
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-1">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-8"
-                            onClick={() => openEdit(ticket)}
-                            disabled={updatingId === ticket.id}
-                            title={t('support.edit')}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          {canDeleteSupportTicket(user?.role_name) && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 text-destructive hover:text-destructive"
-                              onClick={() => handleDelete(ticket.id)}
-                              disabled={updatingId === ticket.id}
-                              title={t('support.delete')}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredTickets.map((ticket) => {
+                    const adminNote = ticket.admin_comment?.trim()
+                    const hasAdminNote = !!adminNote
+                    const isAdminNoteExpanded = !!expandedAdminNotes[ticket.id]
+
+                    return (
+                      <Fragment key={ticket.id}>
+                        <tr className="border-t border-border">
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono text-xs text-muted-foreground">{ticket.id}</span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 shrink-0 p-0"
+                                onClick={() => copyTicketId(ticket.id)}
+                                aria-label={t('common.copy') || 'Copy'}
+                                title={t('common.copy') || 'Copy'}
+                              >
+                                {copiedTicketIds[ticket.id] ? (
+                                  <Check className="h-3.5 w-3.5 text-green-600" aria-hidden />
+                                ) : (
+                                  <Copy className="h-3.5 w-3.5" aria-hidden />
+                                )}
+                              </Button>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 font-medium text-foreground">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="min-w-0 truncate">{ticket.title}</span>
+                              {hasAdminNote ? (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 shrink-0 p-0 relative"
+                                  onClick={() => toggleAdminNote(ticket.id)}
+                                  aria-expanded={isAdminNoteExpanded}
+                                  aria-label={
+                                    isAdminNoteExpanded
+                                      ? t('support.hideAdminNote')
+                                      : t('support.viewAdminNote')
+                                  }
+                                  title={
+                                    isAdminNoteExpanded
+                                      ? t('support.hideAdminNote')
+                                      : t('support.viewAdminNote')
+                                  }
+                                >
+                                  <MessageSquare className="h-4 w-4 text-primary" aria-hidden />
+                                  {!isAdminNoteExpanded ? (
+                                    <span
+                                      className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-primary"
+                                      aria-hidden
+                                    />
+                                  ) : null}
+                                </Button>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <TicketPriorityBadge
+                              label={priorityLabelFor(ticket.priority)}
+                              priority={ticket.priority || ''}
+                            />
+                          </td>
+                          <td className="py-3 px-4">
+                            <TicketStatusBadge
+                              label={statusLabelFor(ticket.status)}
+                              status={ticket.status || ''}
+                            />
+                          </td>
+                          <td className="py-3 px-4 text-muted-foreground">{ticket.team ?? '—'}</td>
+                          <td className="py-3 px-4 text-muted-foreground">
+                            {formatDate(ticket.created_at)}
+                          </td>
+                          <td className="py-3 px-4 text-muted-foreground">
+                            {ticket.charger_id != null ? `${t('support.charger')} ${ticket.charger_id}` : '—'}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8"
+                                onClick={() => openEdit(ticket)}
+                                disabled={updatingId === ticket.id}
+                                title={t('support.edit')}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              {canDeleteSupportTicket(user?.role_name) && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 text-destructive hover:text-destructive"
+                                  onClick={() => handleDelete(ticket.id)}
+                                  disabled={updatingId === ticket.id}
+                                  title={t('support.delete')}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                        {isAdminNoteExpanded && hasAdminNote ? (
+                          <tr className="bg-muted/20">
+                            <td colSpan={TICKET_TABLE_COLUMN_COUNT} className="py-3 px-4">
+                              <AdminNoteCallout
+                                comment={adminNote}
+                                updatedAt={ticket.admin_comment_at}
+                              />
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -576,17 +661,10 @@ export default function Support() {
                 />
               </div>
               {editingTicket.admin_comment?.trim() ? (
-                <div className="rounded-lg border-s-4 border-s-primary bg-primary/5 px-3 py-2.5 space-y-1.5">
-                  <p className="text-xs font-semibold text-foreground">{t('support.noteFromIonSupport')}</p>
-                  <p className="text-sm text-foreground whitespace-pre-wrap break-words">
-                    {editingTicket.admin_comment.trim()}
-                  </p>
-                  {editingTicket.admin_comment_at ? (
-                    <p className="text-xs text-muted-foreground">
-                      {t('support.adminCommentUpdated')} {formatDateTime(editingTicket.admin_comment_at)}
-                    </p>
-                  ) : null}
-                </div>
+                <AdminNoteCallout
+                  comment={editingTicket.admin_comment.trim()}
+                  updatedAt={editingTicket.admin_comment_at}
+                />
               ) : null}
               <div className="space-y-2">
                 <Label htmlFor="edit-ticket-desc">{t('support.descriptionRequired')}</Label>

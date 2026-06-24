@@ -696,6 +696,8 @@ const messages: Record<string, { en: string; ar: string }> = {
   'support.resolved': { en: 'Resolved', ar: 'تم الحل' },
   'support.cancelled': { en: 'Cancelled', ar: 'ملغى' },
   'support.noteFromIonSupport': { en: 'Note from ION Support', ar: 'ملاحظة من دعم ION' },
+  'support.viewAdminNote': { en: 'View note from ION', ar: 'عرض ملاحظة من ION' },
+  'support.hideAdminNote': { en: 'Hide note', ar: 'إخفاء الملاحظة' },
   'support.adminCommentUpdated': { en: 'Updated', ar: 'آخر تحديث' },
   'support.technicalTeam': { en: 'Technical Team', ar: 'الفريق التقني' },
   'support.describeIssue': { en: 'Describe the issue...', ar: 'صف المشكلة...' },
