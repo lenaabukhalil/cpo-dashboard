@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { FileText, Minus, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react'
+import { FileText, Minus, Pencil, Plus, RefreshCw, Trash2, X, Copy, Check } from 'lucide-react'
 import { Button } from '../components/ui/button'
+import { Badge } from '../components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
@@ -20,7 +21,75 @@ import { canDeleteSupportTicket } from '../lib/permissions'
 import { AppSelect } from '../components/shared/AppSelect'
 import { EmptyState } from '../components/EmptyState'
 import { useTranslation } from '../context/LanguageContext'
-import { formatDate } from '../lib/dateFormat'
+import { formatDate, formatDateTime } from '../lib/dateFormat'
+import { cn } from '../lib/utils'
+
+function normalizeTicketStatus(status: string): string {
+  return (status || '').toLowerCase().replace(/\s+/g, '_')
+}
+
+function ticketStatusBadgeClass(status: string): string {
+  const v = normalizeTicketStatus(status)
+  if (v === 'new') {
+    return 'bg-blue-100 text-blue-700 border-blue-200/70 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-800/50'
+  }
+  if (v === 'in_progress') {
+    return 'bg-amber-100 text-amber-800 border-amber-200/70 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-800/50'
+  }
+  if (v === 'resolved') {
+    return 'bg-green-100 text-green-800 border-green-200/70 dark:bg-green-900/40 dark:text-green-300 dark:border-green-800/50'
+  }
+  if (v === 'cancelled') {
+    return 'bg-slate-100 text-slate-600 border-border dark:bg-slate-800/50 dark:text-slate-400'
+  }
+  return 'bg-muted text-muted-foreground border-border'
+}
+
+function ticketPriorityBadgeClass(priority: string): string {
+  const v = (priority || '').toLowerCase()
+  if (v === 'low') {
+    return 'bg-slate-100 text-slate-700 border-slate-200/70 dark:bg-slate-800/50 dark:text-slate-300 dark:border-slate-700/50'
+  }
+  if (v === 'medium') {
+    return 'bg-amber-100 text-amber-800 border-amber-200/70 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-800/50'
+  }
+  if (v === 'high') {
+    return 'bg-orange-100 text-orange-800 border-orange-200/70 dark:bg-orange-900/40 dark:text-orange-300 dark:border-orange-800/50'
+  }
+  if (v === 'critical' || v === 'urgent') {
+    return 'bg-red-100 text-red-800 border-red-200/70 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800/50'
+  }
+  return 'bg-muted text-muted-foreground border-border'
+}
+
+function TicketStatusBadge({ label, status }: { label: string; status: string }) {
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium',
+        ticketStatusBadgeClass(status),
+      )}
+    >
+      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-70" aria-hidden />
+      {label}
+    </Badge>
+  )
+}
+
+function TicketPriorityBadge({ label, priority }: { label: string; priority: string }) {
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        'inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium',
+        ticketPriorityBadgeClass(priority),
+      )}
+    >
+      {label}
+    </Badge>
+  )
+}
 
 export default function Support() {
   const { t } = useTranslation()
@@ -63,6 +132,7 @@ export default function Support() {
   const [chargers, setChargers] = useState<{ id: number; name: string; locationId: number }[]>([])
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [copiedTicketIds, setCopiedTicketIds] = useState<Record<string, true>>({})
   const [editOpen, setEditOpen] = useState(false)
   const [editingTicket, setEditingTicket] = useState<MaintenanceTicket | null>(null)
   const [editForm, setEditForm] = useState({
@@ -108,6 +178,31 @@ export default function Support() {
   }
 
   const filteredTickets = tickets
+
+  const statusLabelFor = (status: string) => {
+    const key = normalizeTicketStatus(status)
+    const opt = STATUS_OPTIONS.find((o) => o.value === key)
+    return opt?.label ?? (status || '—').replace(/_/g, ' ')
+  }
+
+  const priorityLabelFor = (priority: string) => {
+    const key = (priority || '').toLowerCase()
+    const opt = PRIORITY_OPTIONS.find((o) => o.value === key)
+    return opt?.label ?? (priority || '—')
+  }
+
+  const copyTicketId = (id: string) => {
+    void navigator.clipboard.writeText(id).then(() => {
+      setCopiedTicketIds((prev) => ({ ...prev, [id]: true }))
+      window.setTimeout(() => {
+        setCopiedTicketIds((prev) => {
+          const next = { ...prev }
+          delete next[id]
+          return next
+        })
+      }, 1500)
+    })
+  }
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault()
@@ -249,9 +344,10 @@ export default function Support() {
             />
           ) : (
             <div className="rounded-xl border border-border overflow-hidden table-wrap table-wrapper">
-              <table className="w-full text-sm min-w-[720px]">
+              <table className="w-full text-sm min-w-[860px]">
                 <thead>
                   <tr className="bg-muted/40">
+                    <th className="text-left py-3 px-4 font-semibold rtl:text-right">{t('support.ticketId')}</th>
                     <th className="text-left py-3 px-4 font-semibold rtl:text-right">{t('support.titleLabel')}</th>
                     <th className="text-left py-3 px-4 font-semibold rtl:text-right">{t('support.priority')}</th>
                     <th className="text-left py-3 px-4 font-semibold rtl:text-right">{t('support.status')}</th>
@@ -264,9 +360,39 @@ export default function Support() {
                 <tbody>
                   {filteredTickets.map((ticket) => (
                     <tr key={ticket.id} className="border-t border-border">
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-xs text-muted-foreground">{ticket.id}</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 shrink-0 p-0"
+                            onClick={() => copyTicketId(ticket.id)}
+                            aria-label={t('common.copy') || 'Copy'}
+                            title={t('common.copy') || 'Copy'}
+                          >
+                            {copiedTicketIds[ticket.id] ? (
+                              <Check className="h-3.5 w-3.5 text-green-600" aria-hidden />
+                            ) : (
+                              <Copy className="h-3.5 w-3.5" aria-hidden />
+                            )}
+                          </Button>
+                        </div>
+                      </td>
                       <td className="py-3 px-4 font-medium text-foreground">{ticket.title}</td>
-                      <td className="py-3 px-4 text-muted-foreground capitalize">{(ticket.priority || '—').toLowerCase()}</td>
-                      <td className="py-3 px-4 text-muted-foreground capitalize">{(ticket.status || '—').replace('_', ' ')}</td>
+                      <td className="py-3 px-4">
+                        <TicketPriorityBadge
+                          label={priorityLabelFor(ticket.priority)}
+                          priority={ticket.priority || ''}
+                        />
+                      </td>
+                      <td className="py-3 px-4">
+                        <TicketStatusBadge
+                          label={statusLabelFor(ticket.status)}
+                          status={ticket.status || ''}
+                        />
+                      </td>
                       <td className="py-3 px-4 text-muted-foreground">{ticket.team ?? '—'}</td>
                       <td className="py-3 px-4 text-muted-foreground">
                         {formatDate(ticket.created_at)}
@@ -449,6 +575,19 @@ export default function Support() {
                   placeholder={t('support.placeholderTitle')}
                 />
               </div>
+              {editingTicket.admin_comment?.trim() ? (
+                <div className="rounded-lg border-s-4 border-s-primary bg-primary/5 px-3 py-2.5 space-y-1.5">
+                  <p className="text-xs font-semibold text-foreground">{t('support.noteFromIonSupport')}</p>
+                  <p className="text-sm text-foreground whitespace-pre-wrap break-words">
+                    {editingTicket.admin_comment.trim()}
+                  </p>
+                  {editingTicket.admin_comment_at ? (
+                    <p className="text-xs text-muted-foreground">
+                      {t('support.adminCommentUpdated')} {formatDateTime(editingTicket.admin_comment_at)}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="space-y-2">
                 <Label htmlFor="edit-ticket-desc">{t('support.descriptionRequired')}</Label>
                 <textarea
@@ -478,6 +617,12 @@ export default function Support() {
                     onChange={(v) => setEditForm((f) => ({ ...f, status: v }))}
                     placeholder={t('support.new')}
                   />
+                  <div className="pt-1">
+                    <TicketStatusBadge
+                      label={statusLabelFor(editForm.status)}
+                      status={editForm.status}
+                    />
+                  </div>
                 </div>
               </div>
               <div className="space-y-2">
