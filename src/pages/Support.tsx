@@ -429,7 +429,7 @@ export default function Support() {
                                   type="button"
                                   variant="ghost"
                                   size="sm"
-                                  className="h-6 w-6 shrink-0 p-0 relative"
+                                  className="h-6 w-6 p-0 relative text-primary hover:bg-primary/10 hover:text-primary focus-visible:ring-1 focus-visible:ring-primary/40 shrink-0"
                                   onClick={() => toggleAdminNote(ticket.id)}
                                   aria-expanded={isAdminNoteExpanded}
                                   aria-label={
