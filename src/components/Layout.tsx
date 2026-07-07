@@ -5,6 +5,7 @@ import Header from './Header'
 import { Sheet, SheetContent } from './ui/sheet'
 import { useLanguage, useTranslation } from '../context/LanguageContext'
 import { useNodeRedNotificationStream } from '../hooks/useNodeRedNotificationStream'
+import { useNotificationsSocket } from '../hooks/useNotificationsSocket'
 import ToastContainer from './ToastContainer'
 
 export default function Layout() {
@@ -14,7 +15,8 @@ export default function Layout() {
   const { t } = useTranslation()
   const sidebarSide = isRtl ? 'right' : 'left'
   const contentMargin = isRtl ? 'mr-0 lg:mr-64' : 'ml-0 lg:ml-64'
-  useNodeRedNotificationStream()
+  const socketStatus = useNotificationsSocket()
+  useNodeRedNotificationStream(socketStatus)
 
   useEffect(() => {
     let dismissTimer: ReturnType<typeof window.setTimeout>
