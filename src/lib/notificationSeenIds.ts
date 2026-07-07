@@ -27,6 +27,10 @@ export function consumeNotificationToast(id: string): boolean {
   return true
 }
 
+export function hasNotificationBeenSeen(id: string): boolean {
+  return seenNotificationIds.has(id)
+}
+
 export function resetNotificationSeenIds(): void {
   seenNotificationIds = new Set()
 }

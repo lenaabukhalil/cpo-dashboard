@@ -2,26 +2,28 @@ import { useEffect, useRef } from "react"
 import { useAuth } from "../context/AuthContext"
 import { useNotifications } from "../contexts/NotificationContext"
 import { useToast } from "../contexts/ToastContext"
+import {
+  consumeNotificationToast,
+  hasNotificationBeenSeen,
+  markNotificationSeen,
+  notificationItemId,
+  notificationToastContent,
+  resetNotificationSeenIds,
+} from "../lib/notificationSeenIds"
+import type { NotificationsSocketStatus } from "./useNotificationsSocket"
 import { fetchChargerNotifications } from "../services/api"
 
-const MAX_SEEN_IDS = 500
-let seenNotificationIds = new Set<string>()
-
-function markSeen(id: string) {
-  seenNotificationIds.add(id)
-  if (seenNotificationIds.size > MAX_SEEN_IDS) {
-    const tail = [...seenNotificationIds].slice(-MAX_SEEN_IDS)
-    seenNotificationIds = new Set(tail)
-  }
-}
-
-export function useNodeRedNotificationStream() {
+export function useNodeRedNotificationStream(socketStatus: NotificationsSocketStatus) {
   const { user, loading } = useAuth()
   const { mergeNotificationsFromApi } = useNotifications()
   const { pushToast } = useToast()
   const pollTimerRef = useRef<number | null>(null)
   const lastPollTsRef = useRef<number>(0)
   const isInitialLoadRef = useRef(true)
+  const socketStatusRef = useRef(socketStatus)
+  const pollFnRef = useRef<(() => void) | null>(null)
+
+  socketStatusRef.current = socketStatus
 
   useEffect(() => {
     if (loading || !user) return
@@ -38,6 +40,16 @@ export function useNodeRedNotificationStream() {
       return undefined
     }
 
+    const scheduleNextPoll = () => {
+      if (socketStatusRef.current === "open") {
+        pollTimerRef.current = null
+        return
+      }
+      pollTimerRef.current = window.setTimeout(() => {
+        pollFnRef.current?.()
+      }, POLL_INTERVAL_MS)
+    }
+
     const poll = async () => {
       const suppressToasts = isInitialLoadRef.current
       try {
@@ -46,21 +58,20 @@ export function useNodeRedNotificationStream() {
         mergeNotificationsFromApi(items, unreadCount)
 
         items.forEach((item) => {
-          const id = item.id ?? `${item.timestamp ?? item.createdAt}-${item.chargerId ?? "charger"}`
-          if (seenNotificationIds.has(id)) return
-          markSeen(id)
-
+          const id = notificationItemId(item)
           const ts = toEpochMs(item)
           if (ts != null) lastPollTsRef.current = Math.max(lastPollTsRef.current, ts)
 
-          if (suppressToasts) return
+          if (hasNotificationBeenSeen(id)) return
 
-          const title =
-            (item.chargerName ?? "").trim() ||
-            ((item.chargerId ?? "").trim() ? `Charger ${String(item.chargerId).trim()}` : "Charger")
-          const message =
-            (item.message ?? "").trim() ||
-            (item.online === true ? "Charger is online" : "Charger is offline")
+          if (suppressToasts) {
+            markNotificationSeen(id)
+            return
+          }
+
+          if (!consumeNotificationToast(id)) return
+
+          const { title, message } = notificationToastContent(item)
           pushToast(title, message)
         })
       } catch {
@@ -71,7 +82,11 @@ export function useNodeRedNotificationStream() {
         }
       }
 
-      pollTimerRef.current = window.setTimeout(poll, POLL_INTERVAL_MS)
+      scheduleNextPoll()
+    }
+
+    pollFnRef.current = () => {
+      void poll()
     }
 
     void poll()
@@ -79,9 +94,28 @@ export function useNodeRedNotificationStream() {
     return () => {
       if (pollTimerRef.current) window.clearTimeout(pollTimerRef.current)
       pollTimerRef.current = null
+      pollFnRef.current = null
       lastPollTsRef.current = 0
       isInitialLoadRef.current = true
-      seenNotificationIds = new Set()
+      resetNotificationSeenIds()
     }
   }, [loading, user, mergeNotificationsFromApi, pushToast])
+
+  useEffect(() => {
+    if (loading || !user) return
+
+    if (socketStatus === "open") {
+      if (pollTimerRef.current != null) {
+        window.clearTimeout(pollTimerRef.current)
+        pollTimerRef.current = null
+      }
+      return
+    }
+
+    if (pollTimerRef.current == null && !isInitialLoadRef.current) {
+      pollTimerRef.current = window.setTimeout(() => {
+        pollFnRef.current?.()
+      }, 60000)
+    }
+  }, [socketStatus, loading, user])
 }
