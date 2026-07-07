@@ -15,6 +15,12 @@ export default defineConfig({
         changeOrigin: true,
         secure: true,
       },
+      '/ws': {
+        target: 'https://dash.evse.cloud',
+        ws: true,
+        changeOrigin: true,
+        secure: true,
+      },
     },
   },
 })
