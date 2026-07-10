@@ -36,6 +36,8 @@ const ROLE_OPTIONS: { value: number; labelKey: string; user_type: string }[] = [
   { value: 6, labelKey: 'users.accountant', user_type: 'accountant' },
 ]
 
+const toStringSafe = (v: unknown): string => (v == null ? '' : String(v))
+
 function partnerUserId(u: PartnerUser): number {
   return u.user_id ?? u.id ?? 0
 }
@@ -316,7 +318,7 @@ export function PartnerUsersTab({
     setEditForm({
       f_name: u.first_name ?? u.f_name ?? '',
       l_name: u.last_name ?? u.l_name ?? '',
-      mobile: u.mobile || '',
+      mobile: toStringSafe(u.mobile),
       email: u.email || '',
       role_id: u.role_id ?? 2,
       user_type: u.user_type || 'operator',

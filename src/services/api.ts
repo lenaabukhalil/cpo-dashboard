@@ -251,7 +251,7 @@ export interface PartnerUser {
   last_name?: string
   f_name?: string
   l_name?: string
-  mobile: string
+  mobile: number | string
   email?: string | null
   role_id: number
   role_name?: string | null
