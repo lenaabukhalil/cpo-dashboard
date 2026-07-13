@@ -21,6 +21,7 @@ import { useToast } from '../../contexts/ToastContext'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog'
 import {
   defaultAddPartnerUserFormValues,
+  normalizeMobile,
   stripMobileDigits,
   validateAddPartnerUserForm,
   USER_TYPE_OPTIONS,
@@ -343,7 +344,8 @@ export function PartnerUsersTab({
       setMessage(t('users.required'))
       return
     }
-    if (!editForm.mobile.trim() || editForm.mobile.trim().length < 10) {
+    const normalizedMobile = normalizeMobile(editForm.mobile)
+    if (!normalizedMobile || normalizedMobile.length < 8 || normalizedMobile.length > 12) {
       setMessage(t('users.mobileRequired'))
       return
     }
@@ -351,7 +353,7 @@ export function PartnerUsersTab({
     const body: Parameters<typeof updatePartnerUserScoped>[2] = {
       f_name: editForm.f_name.trim(),
       l_name: editForm.l_name.trim(),
-      mobile: editForm.mobile.trim(),
+      mobile: normalizedMobile,
       email: editForm.email.trim() || undefined,
       role_id: editForm.role_id,
       user_type: editForm.user_type,
