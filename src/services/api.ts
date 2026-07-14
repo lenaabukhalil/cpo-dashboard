@@ -1414,6 +1414,26 @@ export async function markNotificationsSeenApi(
   }
 }
 
+export async function markAllNotificationsReadApi(
+  userId: string | number,
+): Promise<{ success: boolean; message?: string }> {
+  const ac = new AbortController()
+  const timeout = setTimeout(() => ac.abort(), NOTIFICATIONS_API_TIMEOUT_MS)
+  try {
+    const res = await request<{ success?: boolean; message?: string }>(
+      '/api/v4/notifications/mark-all-read',
+      {
+        method: 'POST',
+        body: JSON.stringify({ userId: Number(userId) }),
+        signal: ac.signal,
+      },
+    )
+    return { success: res.success !== false, message: res.message }
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 // Backward-compatible wrappers for existing pages.
 export type NotificationItem = ChargerNotificationItem
 

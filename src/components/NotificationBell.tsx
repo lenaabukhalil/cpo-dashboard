@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import { useNotifications } from '../contexts/NotificationContext'
 import {
   fetchChargerNotifications,
+  markAllNotificationsReadApi,
   markNotificationAsReadApi,
   markNotificationsSeenApi,
 } from '../services/api'
@@ -39,14 +40,26 @@ export default function NotificationBell() {
     }
   }
 
-  const markAllSeenAndRefresh = async () => {
+  const markAllReadAndRefresh = async () => {
     if (userId == null) return
-    try {
-      const seen = await markNotificationsSeenApi(userId)
-      if (seen.success) mergeNotificationsFromApi([], 0)
-    } catch {
-      // ignore
-    }
+    mergeNotificationsFromApi(
+      notifications.map((n) => ({
+        id: n.id,
+        chargerId: n.chargerId,
+        chargerName: n.chargerName,
+        organizationName: n.organizationName,
+        locationName: n.locationName,
+        message: n.message,
+        timestamp: n.timestamp.getTime(),
+        read: true,
+        isNew: n.isNew,
+      })),
+      0,
+    )
+    await Promise.allSettled([
+      markAllNotificationsReadApi(userId),
+      markNotificationsSeenApi(userId),
+    ])
     await loadNotificationsHistory()
   }
 
@@ -110,7 +123,7 @@ export default function NotificationBell() {
               variant="ghost"
               size="sm"
               className="h-7 shrink-0 rounded-full px-3 text-xs font-medium text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
-              onClick={() => void markAllSeenAndRefresh()}
+              onClick={() => void markAllReadAndRefresh()}
             >
               Mark all as read
             </Button>
