@@ -82,11 +82,9 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           const existing = byId.get(id)
           const chargerName = item.chargerName ?? existing?.chargerName
           const chargerId = item.chargerId ?? existing?.chargerId
-          const chargerPart =
+          const title =
             (chargerName ?? "").trim() ||
             ((chargerId ?? "").trim() ? `Charger ${String(chargerId).trim()}` : "Charger")
-          const locationPart = (item.locationName ?? "").trim()
-          const title = locationPart ? `${locationPart} - ${chargerPart}` : chargerPart
 
           const timeFromTimestamp =
             item.timestamp != null && Number.isFinite(Number(item.timestamp))

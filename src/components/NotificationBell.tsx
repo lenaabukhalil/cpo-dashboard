@@ -109,7 +109,6 @@ export default function NotificationBell() {
               type="button"
               variant="ghost"
               size="sm"
-              disabled={unreadCount === 0}
               className="h-7 shrink-0 rounded-full px-3 text-xs font-medium text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
               onClick={() => void markAllSeenAndRefresh()}
             >
@@ -121,7 +120,11 @@ export default function NotificationBell() {
               <div className="p-8 text-center text-sm text-muted-foreground">No notifications</div>
             ) : (
               <div className="p-2">
-                {notifications.map((notification) => (
+                {notifications.map((notification) => {
+                  const loc = (notification.locationName ?? '').trim()
+                  const mainTitle = loc || notification.title
+                  const chargerBadge = loc ? notification.title : null
+                  return (
                   <div
                     key={notification.id}
                     className={cn(
@@ -142,8 +145,13 @@ export default function NotificationBell() {
                               notification.read && 'font-normal',
                             )}
                           >
-                            {notification.title}
+                            {mainTitle}
                           </p>
+                          {chargerBadge != null && (
+                            <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                              {chargerBadge}
+                            </span>
+                          )}
                           {notification.isNew && (
                             <span
                               className={cn(
@@ -189,7 +197,8 @@ export default function NotificationBell() {
                       </Button>
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </ScrollArea>
