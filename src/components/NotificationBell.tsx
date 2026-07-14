@@ -21,7 +21,7 @@ import { useLanguage } from '../context/LanguageContext'
 
 export default function NotificationBell() {
   const { user } = useAuth()
-  const { notifications, unreadCount, markAsRead, removeNotification, mergeNotificationsFromApi } =
+  const { notifications, unreadCount, markAsRead, mergeNotificationsFromApi } =
     useNotifications()
   const { locale } = useLanguage()
   const [open, setOpen] = useState(false)
@@ -148,66 +148,56 @@ export default function NotificationBell() {
                     )}
                     onClick={() => void handleNotificationClick(notification.id)}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="mb-1 flex flex-wrap items-center gap-2">
-                          <p
-                            className={cn(
-                              'truncate text-sm',
-                              !notification.read && 'font-semibold text-foreground',
-                              notification.read && 'font-normal',
-                            )}
-                          >
-                            {mainTitle}
-                          </p>
-                          {chargerBadge != null && (
-                            <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                              {chargerBadge}
-                            </span>
-                          )}
-                          {notification.isNew && (
-                            <span
-                              className={cn(
-                                'shrink-0 text-[10px] font-medium uppercase tracking-wide',
-                                notification.read ? 'text-muted-foreground' : 'text-primary/80',
-                              )}
-                            >
-                              New
-                            </span>
-                          )}
-                        </div>
+                    <div className="min-w-0">
+                      <div className="mb-1 flex flex-wrap items-center gap-2">
                         <p
                           className={cn(
-                            'line-clamp-2 text-xs',
-                            notification.read ? 'text-muted-foreground' : 'text-foreground/90',
+                            'truncate text-sm',
+                            !notification.read && 'font-semibold text-foreground',
+                            notification.read && 'font-normal',
                           )}
                         >
-                          {notification.message}
+                          {mainTitle}
                         </p>
-                        <div className="mt-1 flex flex-wrap items-center gap-2">
-                          <p className="text-xs text-muted-foreground">
-                            {formatDistanceToNow(notification.timestamp, { addSuffix: true })}
-                          </p>
-                          <Link
-                            to={`/notifications/${encodeURIComponent(notification.id)}`}
-                            className="text-xs text-primary hover:underline"
-                            onClick={(e) => e.stopPropagation()}
+                        {chargerBadge != null && (
+                          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                            {chargerBadge}
+                          </span>
+                        )}
+                        {notification.isNew && (
+                          <span
+                            className={cn(
+                              'shrink-0 text-[10px] font-medium uppercase tracking-wide',
+                              notification.read ? 'text-muted-foreground' : 'text-primary/80',
+                            )}
                           >
-                            Details
-                          </Link>
-                        </div>
+                            New
+                          </span>
+                        )}
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 flex-shrink-0"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          removeNotification(notification.id)
-                        }}
+                      <p
+                        className={cn(
+                          'line-clamp-2 text-xs',
+                          notification.read ? 'text-muted-foreground' : 'text-foreground/90',
+                        )}
                       >
-                        ×
-                      </Button>
+                        {notification.message}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <p className="text-xs text-muted-foreground">
+                          {formatDistanceToNow(notification.timestamp, { addSuffix: true })}
+                        </p>
+                        <Link
+                          to={`/notifications/${encodeURIComponent(notification.id)}`}
+                          className="text-xs text-primary hover:underline"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void handleNotificationClick(notification.id)
+                          }}
+                        >
+                          Details
+                        </Link>
+                      </div>
                     </div>
                   </div>
                   )
