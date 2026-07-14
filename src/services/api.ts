@@ -454,15 +454,17 @@ export async function createRfidUser(
   }
 }
 
+export type PartnerUserUpdateResponse = { success: boolean; message?: string; changed?: boolean }
+
 export async function updatePartnerUser(
   userId: number,
   body: Partial<{ f_name: string; l_name: string; mobile: string; email: string; role_id: number; user_type: string; password: string; is_active: boolean }>
 ) {
-  return request<{ success: boolean; message?: string }>('/api/v4/users/partner', {
+  return request<PartnerUserUpdateResponse>('/api/v4/users/partner', {
     method: 'PUT',
     params: { id: String(userId) },
     body: JSON.stringify(body),
-  })
+  }) as Promise<PartnerUserUpdateResponse & { statusCode?: number; requiredPermission?: string }>
 }
 
 export async function deletePartnerUser(userId: number) {

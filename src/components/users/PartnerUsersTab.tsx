@@ -107,7 +107,7 @@ function updatePartnerUserScoped(
     is_active: boolean
   }>,
 ) {
-  return request<{ success: boolean; message?: string }>('/api/v4/users/partner', {
+  return request<{ success: boolean; message?: string; changed?: boolean }>('/api/v4/users/partner', {
     method: 'PUT',
     params: partnerQueryParams(targetOrgId, { id: String(userId) }),
     body: JSON.stringify(body),
@@ -364,8 +364,13 @@ export function PartnerUsersTab({
         if (res.success) {
           setEditOpen(false)
           setEditingUser(null)
-          loadUsers(true, true)
-          pushToast(t('users.partnerUpdated'), '')
+          const changed = (res as { changed?: boolean }).changed
+          if (changed === false) {
+            pushToast(t('partnerUsers.toast.noChanges'), '')
+          } else {
+            loadUsers(true, true)
+            pushToast(t('users.partnerUpdated'), '')
+          }
         } else {
           setMessage((res as { message?: string }).message || t('users.updateFailed'))
         }

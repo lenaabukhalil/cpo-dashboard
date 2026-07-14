@@ -487,6 +487,7 @@ const messages: Record<string, { en: string; ar: string }> = {
     ar: 'عرض للقراءة فقط — لا يمكنك إضافة أو تعديل أو إزالة مستخدمي RFID من هذه المؤسسة.',
   },
   'users.partnerCreated': { en: 'Partner user created', ar: 'تم إنشاء مستخدم الشريك' },
+  'partnerUsers.toast.noChanges': { en: 'No changes were made', ar: 'لم يتم إجراء أي تغييرات' },
   'users.partnerUpdated': { en: 'Partner user updated', ar: 'تم تحديث مستخدم الشريك' },
   'users.partnerRemoved': { en: 'Partner user removed', ar: 'تم إزالة مستخدم الشريك' },
   'users.removeConfirm': {
