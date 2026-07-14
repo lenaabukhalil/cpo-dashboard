@@ -105,17 +105,16 @@ export default function NotificationBell() {
         <PopoverContent className="w-80 p-0" align="end">
           <div className="flex items-center justify-between gap-2 border-b p-4">
             <h3 className="text-sm font-semibold">{getLabel('header.notifications', locale)}</h3>
-            {unreadCount > 0 && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 shrink-0 text-xs"
-                onClick={() => void markAllSeenAndRefresh()}
-              >
-                Mark all as read
-              </Button>
-            )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={unreadCount === 0}
+              className="h-7 shrink-0 rounded-full px-3 text-xs font-medium text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
+              onClick={() => void markAllSeenAndRefresh()}
+            >
+              Mark all as read
+            </Button>
           </div>
           <ScrollArea className="h-[400px]">
             {notifications.length === 0 ? (
