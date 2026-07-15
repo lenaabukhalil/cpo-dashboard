@@ -814,6 +814,8 @@ export interface MaintenanceTicket {
   connector_id?: number
   created_at?: string
   updated_at?: string
+  admin_comment?: string | null
+  admin_comment_at?: string | null
 }
 
 export async function getMaintenanceTickets(params?: { organization_id?: number }) {
