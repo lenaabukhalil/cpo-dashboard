@@ -91,6 +91,8 @@ const messages: Record<string, { en: string; ar: string }> = {
   'dashboard.activeSessions.chargingNow': { en: 'Charging', ar: 'يشحن' },
   'dashboard.activeSessions.notCharging': { en: 'Not charging', ar: 'لا يشحن' },
   'dashboard.monthToDate': { en: 'Month to Date', ar: 'من بداية الشهر' },
+  'dashboard.amountEnergy': { en: 'Amount & Energy', ar: 'المبلغ والطاقة' },
+  'dashboard.thisMonth': { en: 'This month', ar: 'هذا الشهر' },
   'dashboard.monthToDate.amount': { en: 'Amount (JOD)', ar: 'المبلغ (دينار)' },
   'dashboard.monthToDate.energy': { en: 'Energy (kWh)', ar: 'الطاقة (كيلوواط/س)' },
   'dashboard.chargersOnline': { en: 'Chargers Online', ar: 'الشواحن متصلة' },

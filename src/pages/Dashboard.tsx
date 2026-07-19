@@ -228,18 +228,28 @@ export default function Dashboard() {
         <Card className="border border-border">
           <CardContent className="p-4 flex items-center justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-sm text-muted-foreground">{t('dashboard.monthToDate')}</p>
+              <p className="text-sm text-muted-foreground">{t('dashboard.amountEnergy')}</p>
+              <p className="text-xs text-muted-foreground/70">{t('dashboard.thisMonth')}</p>
               {loading ? (
-                <div className="h-8 w-24 rounded bg-muted animate-pulse mt-1" />
+                <div className="mt-2 space-y-1">
+                  <div className="h-4 w-32 rounded bg-muted animate-pulse" />
+                  <div className="h-4 w-32 rounded bg-muted animate-pulse" />
+                </div>
               ) : (
-                <>
-                  <p className="text-2xl font-bold text-foreground tabular-nums">
-                    {formatMoney(stats?.mtdAmount)} JOD
-                  </p>
-                  <p className="text-xs text-muted-foreground tabular-nums mt-1">
-                    {toNumberSafe(stats?.mtdEnergyKwh).toFixed(2)} kWh
-                  </p>
-                </>
+                <div className="mt-2 space-y-1 border-s border-border ps-3">
+                  <div className="flex items-center justify-between gap-3 text-xs">
+                    <span className="text-muted-foreground">{t('dashboard.monthToDate.amount')}</span>
+                    <span className="font-semibold text-foreground tabular-nums text-sm">
+                      {formatMoney(stats?.mtdAmount)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 text-xs">
+                    <span className="text-muted-foreground">{t('dashboard.monthToDate.energy')}</span>
+                    <span className="font-semibold text-foreground tabular-nums text-sm">
+                      {toNumberSafe(stats?.mtdEnergyKwh).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
               )}
             </div>
             <Calendar className="h-8 w-8 text-primary shrink-0" />
