@@ -946,6 +946,8 @@ export interface DashboardStats {
   chargersOnline?: number
   totalConnectors?: number
   busyConnectors?: number
+  mtdEnergyKwh?: number
+  mtdAmount?: number
   newUsers?: number
   sessions?: number
   payments?: number

@@ -11,7 +11,9 @@ import {
   type ConnectorStatusRow,
   type ConnectorsStatusSummary,
   type ActiveSessionRow,
+  type DashboardStats,
 } from '../services/api'
+import { formatMoney, toNumberSafe } from '../lib/numberFormat'
 import { OrgSelector } from '../components/shared/OrgSelector'
 import { useAccessibleOrgs } from '../hooks/useAccessibleOrgs'
 import { useAuth } from '../context/AuthContext'
@@ -27,6 +29,7 @@ import {
   ExternalLink,
   Wrench,
   List,
+  Calendar,
 } from 'lucide-react'
 
 export default function Dashboard() {
@@ -41,15 +44,7 @@ export default function Dashboard() {
     loading: orgsLoading,
   } = useAccessibleOrgs()
   const [loading, setLoading] = useState(true)
-  const [stats, setStats] = useState<{
-    activeSessions?: number
-    activeNotCharging?: number
-    totalActive?: number
-    chargersOnline?: number
-    totalConnectors?: number
-    busyConnectors?: number
-    utilization?: number
-  } | null>(null)
+  const [stats, setStats] = useState<DashboardStats | null>(null)
   const [connectorsList, setConnectorsList] = useState<ConnectorStatusRow[]>([])
   const [connectorsSummary, setConnectorsSummary] = useState<ConnectorsStatusSummary | null>(null)
   const [historyPoints, setHistoryPoints] = useState<{ ts: number; count: number }[]>([])
@@ -186,7 +181,7 @@ export default function Dashboard() {
       </section>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <Card className="border border-border">
           <CardContent className="p-4 flex items-center justify-between gap-4">
             <div className="min-w-0">
@@ -228,6 +223,26 @@ export default function Dashboard() {
               )}
             </div>
             <Zap className="h-8 w-8 text-amber-500 shrink-0" />
+          </CardContent>
+        </Card>
+        <Card className="border border-border">
+          <CardContent className="p-4 flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm text-muted-foreground">{t('dashboard.monthToDate')}</p>
+              {loading ? (
+                <div className="h-8 w-24 rounded bg-muted animate-pulse mt-1" />
+              ) : (
+                <>
+                  <p className="text-2xl font-bold text-foreground tabular-nums">
+                    {formatMoney(stats?.mtdAmount)} JOD
+                  </p>
+                  <p className="text-xs text-muted-foreground tabular-nums mt-1">
+                    {toNumberSafe(stats?.mtdEnergyKwh).toFixed(2)} kWh
+                  </p>
+                </>
+              )}
+            </div>
+            <Calendar className="h-8 w-8 text-primary shrink-0" />
           </CardContent>
         </Card>
         <Card className="border border-border">
