@@ -17,6 +17,7 @@ import {
   type PartnerUser,
 } from '../../services/api'
 import type { AccessibleOrg } from '../../types/org'
+import { ASSIGNABLE_ROLE_CODES } from '../../config/roles'
 import { useToast } from '../../contexts/ToastContext'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog'
 import {
@@ -28,6 +29,8 @@ import {
   type AddPartnerUserFormValues,
   type PartnerUserType,
 } from '../../lib/partnerUserFormValidation'
+
+const ASSIGNABLE_ROLE_CODE_SET = new Set<string>(ASSIGNABLE_ROLE_CODES)
 
 const ROLE_OPTIONS: { value: number; labelKey: string; user_type: string }[] = [
   { value: 1, labelKey: 'users.admin', user_type: 'admin' },
@@ -170,6 +173,7 @@ export function PartnerUsersTab({
   const [message, setMessage] = useState('')
   const [addOpen, setAddOpen] = useState(false)
   const [roles, setRoles] = useState<RbacRole[] | null>(null)
+  const [allRoles, setAllRoles] = useState<RbacRole[] | null>(null)
   const [rolesLoading, setRolesLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [addValues, setAddValues] = useState<AddPartnerUserFormValues>(() => defaultAddPartnerUserFormValues())
@@ -244,15 +248,28 @@ export function PartnerUsersTab({
   }, [orgsLoading, selectedOrgPK, getTargetOrgIdParam])
 
   const loadRolesOnce = async () => {
-    if (roles || rolesLoading) return
+    if (roles !== null || rolesLoading) return
     setRolesLoading(true)
     try {
       const list = await getRoles()
-      setRoles(Array.isArray(list) ? list : [])
+      const raw = Array.isArray(list) ? list : []
+      setAllRoles(raw)
+      setRoles(raw.filter((r) => ASSIGNABLE_ROLE_CODE_SET.has(r.code)))
     } finally {
       setRolesLoading(false)
     }
   }
+
+  const rolesLoaded = roles !== null
+  const apiReturnedRoles = (allRoles?.length ?? 0) > 0
+  const showLegacyRoleOptions = !rolesLoaded || (roles.length === 0 && !apiReturnedRoles)
+  const showEmptyFilteredRoles = rolesLoaded && roles.length === 0 && apiReturnedRoles
+
+  const orphanedCurrentRole = useMemo((): RbacRole | null => {
+    if (roles === null || allRoles === null) return null
+    if (roles.some((r) => r.id === editForm.role_id)) return null
+    return allRoles.find((r) => r.id === editForm.role_id) ?? null
+  }, [roles, allRoles, editForm.role_id])
 
   const closeAddDialog = () => {
     if (submitting) return
@@ -567,14 +584,24 @@ export function PartnerUsersTab({
                   className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
                   value={editForm.role_id}
                   onChange={(e) => handleEditRoleChange(Number(e.target.value))}
+                  disabled={showEmptyFilteredRoles}
                 >
-                  {(roles ?? []).length > 0
-                    ? (roles ?? []).map((r) => (
-                        <option key={r.id} value={r.id}>{r.name}</option>
-                      ))
-                    : roleOptions.map((opt) => (
+                  {showLegacyRoleOptions
+                    ? roleOptions.map((opt) => (
                         <option key={opt.value} value={opt.value}>{opt.label}</option>
-                      ))}
+                      ))
+                    : (
+                      <>
+                        {orphanedCurrentRole ? (
+                          <option key={orphanedCurrentRole.id} value={orphanedCurrentRole.id} disabled>
+                            {orphanedCurrentRole.name}
+                          </option>
+                        ) : null}
+                        {(roles ?? []).map((r) => (
+                          <option key={r.id} value={r.id}>{r.name}</option>
+                        ))}
+                      </>
+                    )}
                 </select>
               </div>
               <div className="space-y-2">
