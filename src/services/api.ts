@@ -82,7 +82,8 @@ export async function request<T>(
   const dedupKey = isGet ? `GET:${fullPath}` : null
   if (dedupKey) {
     const existing = inFlightRequests.get(dedupKey)
-    if (existing) {
+    // A 401 retry of this same GET must not await the still-pending original.
+    if (existing && !_retried) {
       return existing as ApiRequestResult<T>
     }
   }
@@ -149,7 +150,13 @@ export async function request<T>(
     ) {
       const { performRefresh } = await import('../lib/tokenRefresh')
       const refreshed = await performRefresh()
-      if (refreshed && !_retried) {
+      // performRefresh() also returns true when a refresh ran within
+      // MIN_REFRESH_INTERVAL_MS without fetching a new token. Treat that as a
+      // real retry attempt, but only once: a second 401 on this request must
+      // fall through to handleSessionExpired() rather than looping.
+      const isRetry = _retried === true
+      if (refreshed && !isRetry) {
+        if (dedupKey) inFlightRequests.delete(dedupKey)
         return request<T>(path, { ...opts, _retried: true } as typeof opts)
       }
       clearGetCache()
