@@ -421,17 +421,17 @@ export default function Sessions() {
                               {loc.name}
                             </CardTitle>
                           </CardHeader>
-                          <CardContent className="pt-0 space-y-4">
+                          <CardContent className="pt-0 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                             {chargers.map((ch, chIdx) => (
-                              <div key={`${chIdx}-${ch.id}`} className="rounded-xl border border-border bg-muted/20 p-4 space-y-3">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <Zap className="h-4 w-4 text-amber-500" />
-                                  <span className="font-semibold text-foreground">{ch.name ?? '—'}</span>
+                              <div key={`${chIdx}-${ch.id}`} className="rounded-xl border border-border bg-muted/20 p-4 flex flex-col h-full min-w-0 space-y-3">
+                                <div className="flex items-center gap-2 flex-wrap min-w-0">
+                                  <Zap className="h-4 w-4 text-amber-500 shrink-0" />
+                                  <span className="font-semibold text-foreground break-words min-w-0">{ch.name ?? '—'}</span>
                                   <span className="text-xs font-mono text-primary bg-primary/10 px-2 py-0.5 rounded">{ch.chargerID ?? ch.id}</span>
                                   <StatusBadge status={ch.status} />
                                   <span className="text-xs text-muted-foreground">{ch.type ?? '—'}</span>
                                 </div>
-                                <div className="pl-6 space-y-2">
+                                <div className="pl-6 space-y-2 w-full min-w-0">
                                   {ch.connectors.length === 0 ? (
                                     <p className="text-xs text-muted-foreground">No connectors</p>
                                   ) : (
@@ -439,7 +439,7 @@ export default function Sessions() {
                                       const liveStatus = getConnectorStatusFromList(ch.id, conn.id) ?? conn.status
                                       const logo = connectorTypeLogo(conn.connector_type ?? conn.type)
                                       return (
-                                        <div key={`${connIdx}-${conn.id}`} className="flex items-center gap-2 flex-wrap rounded-lg border border-border bg-background px-3 py-2 text-sm">
+                                        <div key={`${connIdx}-${conn.id}`} className="flex items-center gap-2 flex-wrap rounded-lg border border-border bg-background px-3 py-2 text-sm w-full min-w-0">
                                           {logo ? (
                                             <span className="h-6 w-6 shrink-0 inline-flex items-center justify-center overflow-hidden">
                                               <img
@@ -450,7 +450,11 @@ export default function Sessions() {
                                                   // Some logos (e.g. GBTAC.png) have extra inner padding → scale slightly.
                                                   logo.alt === 'GBT AC' && 'scale-[1.70]',
                                                   logo.alt === 'CCS2' && 'scale-[1.70]',
-                                                  logo.alt === 'GBT DC' && 'scale-[1.35]'
+                                                  logo.alt === 'Type 2' && 'scale-[2.60]',
+                                                  logo.alt === 'Type 1' && 'scale-[1.70]',
+                                                  logo.alt === 'GBT DC' && 'scale-[1.35]',
+                                                  logo.alt === 'CHAdeMO' && 'scale-[1.40]',
+                                                  (logo.alt === 'CCS' || logo.alt === 'CCS1') && 'scale-[1.40]'
                                                 )}
                                                 onError={(e) => {
                                                   // If public asset can't be loaded, fall back to the icon.
