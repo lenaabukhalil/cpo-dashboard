@@ -1326,6 +1326,7 @@ export interface ChargerNotificationItem {
 export interface FetchChargerNotificationsResult {
   items: ChargerNotificationItem[]
   unreadCount?: number
+  success?: boolean
 }
 
 function pickNotificationString(
@@ -1377,16 +1378,18 @@ export function parseNotificationsResponsePayload(data: unknown): FetchChargerNo
 export async function fetchChargerNotifications(params?: {
   since?: number
   userId?: string | number
+  id?: string
 }): Promise<FetchChargerNotificationsResult> {
   const query: Record<string, string> = {}
   if (params?.since != null) query.since = String(params.since)
   if (params?.userId != null && params.userId !== '') query.userId = String(params.userId)
+  if (params?.id != null && params.id !== '') query.id = params.id
 
   const res = await request<unknown>('/api/v4/notifications', {
     params: Object.keys(query).length ? query : undefined,
     skipCache: true,
   })
-  return parseNotificationsResponsePayload(res.data)
+  return { ...parseNotificationsResponsePayload(res.data), success: res.success }
 }
 
 const NOTIFICATIONS_API_TIMEOUT_MS = 30000

@@ -60,6 +60,8 @@ export default function NotificationDetail() {
 
   const [loading, setLoading] = useState(true)
   const [notification, setNotification] = useState<ChargerNotificationItem | null>(null)
+  const [loadError, setLoadError] = useState<'failed' | 'missing' | null>(null)
+  const [retryCount, setRetryCount] = useState(0)
 
   useEffect(() => {
     if (!notificationId || !user?.user_id) return
@@ -69,13 +71,18 @@ export default function NotificationDetail() {
   useEffect(() => {
     if (!notificationId) {
       setNotification(null)
+      setLoadError('missing')
       setLoading(false)
       return
     }
 
-    const localItem = notifications.find((item) => item.id === notificationId)
+    const routeId = String(notificationId).trim()
+    const localItem = notifications.find(
+      (item) => String(item.id ?? '').trim() === routeId,
+    )
     if (localItem) {
       setNotification(fromStoredNotification(localItem))
+      setLoadError(null)
       setLoading(false)
       return
     }
@@ -83,13 +90,26 @@ export default function NotificationDetail() {
     let cancelled = false
     ;(async () => {
       setLoading(true)
+      setLoadError(null)
       try {
-        const { items } = await fetchChargerNotifications({ since: 0, userId: user?.user_id })
+        const result = await fetchChargerNotifications({
+          id: notificationId,
+          userId: user?.user_id,
+        })
         if (cancelled) return
-        const found = items.find((item) => String(item.id ?? '').trim() === notificationId) ?? null
+        if (result.success === false) {
+          setNotification(null)
+          setLoadError('failed')
+          return
+        }
+        const found = result.items[0] ?? null
         setNotification(found)
+        setLoadError(found ? null : 'missing')
       } catch {
-        if (!cancelled) setNotification(null)
+        if (!cancelled) {
+          setNotification(null)
+          setLoadError('failed')
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -98,7 +118,7 @@ export default function NotificationDetail() {
     return () => {
       cancelled = true
     }
-  }, [notificationId, notifications, user?.user_id])
+  }, [notificationId, notifications, user?.user_id, retryCount])
 
   const statusBadge = useMemo(() => {
     if (notification?.online === true) {
@@ -171,7 +191,16 @@ export default function NotificationDetail() {
       ) : !notification ? (
         <Card>
           <CardContent className="py-8 text-sm text-muted-foreground">
-            This notification could not be loaded.
+            {loadError === 'failed' ? (
+              <div className="flex flex-col items-start gap-3">
+                <p>Couldn't load this notification. Check your connection and try again.</p>
+                <Button type="button" size="sm" onClick={() => setRetryCount((n) => n + 1)}>
+                  Retry
+                </Button>
+              </div>
+            ) : (
+              'This notification no longer exists.'
+            )}
           </CardContent>
         </Card>
       ) : (
